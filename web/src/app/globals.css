@@ -1,0 +1,150 @@
+@import "tailwindcss";
+
+@theme {
+  --color-bg: #07070b;
+  --color-panel: #0d0d15;
+  --color-panel-2: #12121c;
+  --color-line: #1e1e2c;
+  --color-ink: #e6e6f0;
+  --color-muted: #70708a;
+
+  --color-surge: #3b82f6;
+  --color-phantom: #a78bfa;
+  --color-plasma: #d946ef;
+  --color-frost: #67e8f9;
+  --color-exotic: #fbbf24;
+  --color-sandbox: #94a3b8;
+  --color-ghost: #4ade80;
+
+  --color-rarity-common: #94a3b8;
+  --color-rarity-uncommon: #34d399;
+  --color-rarity-rare: #38bdf8;
+  --color-rarity-epic: #c084fc;
+  --color-rarity-legendary: #fbbf24;
+
+  --font-mono: var(--font-geist-mono), ui-monospace, SFMono-Regular, Menlo,
+    monospace;
+}
+
+html {
+  background: var(--color-bg);
+}
+
+body {
+  background: var(--color-bg);
+  color: var(--color-ink);
+  font-family: var(--font-mono);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* CRT scanline overlay, applied once in the root layout */
+.crt-scanlines {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  pointer-events: none;
+  background: repeating-linear-gradient(
+    to bottom,
+    rgba(255, 255, 255, 0.025) 0px,
+    rgba(255, 255, 255, 0.025) 1px,
+    transparent 1px,
+    transparent 3px
+  );
+}
+
+.crt-vignette {
+  position: fixed;
+  inset: 0;
+  z-index: 59;
+  pointer-events: none;
+  background: radial-gradient(
+    ellipse at center,
+    transparent 55%,
+    rgba(0, 0, 0, 0.45) 100%
+  );
+}
+
+/* Holo foil shimmer for rare+ cards. --mx/--my track the pointer on desktop;
+   on touch devices the gradient just cycles via the keyframes. */
+.holo-foil {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  mix-blend-mode: color-dodge;
+  opacity: 0.55;
+  background: linear-gradient(
+    115deg,
+    transparent 20%,
+    rgba(255, 0, 128, 0.28) 36%,
+    rgba(0, 255, 255, 0.28) 48%,
+    rgba(255, 255, 0, 0.22) 60%,
+    transparent 78%
+  );
+  background-size: 300% 300%;
+  background-position: calc(var(--mx, 50) * 1%) calc(var(--my, 50) * 1%);
+  animation: holo-drift 6s ease-in-out infinite;
+}
+
+@keyframes holo-drift {
+  0%,
+  100% {
+    filter: hue-rotate(0deg);
+  }
+  50% {
+    filter: hue-rotate(60deg);
+  }
+}
+
+/* GHOST cards flicker like a dying endpoint */
+.ghost-flicker {
+  animation: ghost-flicker 4s steps(1, end) infinite;
+}
+
+@keyframes ghost-flicker {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  7% {
+    opacity: 0.55;
+  }
+  9% {
+    opacity: 1;
+  }
+  13% {
+    opacity: 0.7;
+  }
+  14% {
+    opacity: 1;
+  }
+  54% {
+    opacity: 0.5;
+  }
+  56% {
+    opacity: 1;
+  }
+  81% {
+    opacity: 0.75;
+  }
+  83% {
+    opacity: 1;
+  }
+}
+
+.text-glow {
+  text-shadow: 0 0 12px currentColor;
+}
+
+@keyframes pulse-soft {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+.pulse-soft {
+  animation: pulse-soft 1.6s ease-in-out infinite;
+}
