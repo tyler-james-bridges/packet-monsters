@@ -57,8 +57,14 @@ export const FEEDBACK_TAG = "packet-monsters-battle";
 
 // x402 payment path:
 //  "transfer": client sends a direct USDC transfer tx and proves it with the
-//              tx hash in the PAYMENT header (default; works with any ERC-20).
+//              tx hash in the PAYMENT header (works with any ERC-20).
 //  "eip3009":  client signs an EIP-3009 transferWithAuthorization and the
-//              server submits it. Flip at integration if MockUSDC shipped
-//              with EIP-3009 support.
-export const PAYMENT_PATH: "transfer" | "eip3009" = "transfer";
+//              server submits it (gasless for the buyer, the real x402 shape).
+// MockUSDC shipped with full EIP-3009, so that is the default.
+export const PAYMENT_PATH: "transfer" | "eip3009" = "eip3009";
+
+// EIP-712 domain for MockUSDC's EIP-3009 signatures, from the deploy output.
+const usdcMeta = (deployment as Record<string, unknown>).usdc as
+  | { eip712Domain?: { name?: string; version?: string } }
+  | undefined;
+export const USDC_EIP712_VERSION = usdcMeta?.eip712Domain?.version ?? "2";

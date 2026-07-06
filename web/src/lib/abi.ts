@@ -160,50 +160,32 @@ export const mockUsdcAbi = [
   },
 ] as const;
 
-// Minimal ERC-8004 ReputationRegistry feedback event. The contracts agent owns
-// the real definition; we query for both plausible shapes and merge results.
-export const newFeedbackEventSimple = {
+// ERC-8004 ReputationRegistry feedback event, exact shape from the deployed
+// contract (contracts/deployment.json abis.ReputationRegistry).
+export const newFeedbackEvent = {
   type: "event",
   name: "NewFeedback",
   inputs: [
     { name: "agentId", type: "uint256", indexed: true },
     { name: "client", type: "address", indexed: true },
-    { name: "value", type: "uint8", indexed: false },
-    { name: "tag", type: "string", indexed: false },
+    { name: "value", type: "int128", indexed: false },
+    { name: "valueDecimals", type: "uint8", indexed: false },
+    { name: "tag1", type: "string", indexed: false },
+    { name: "tag2", type: "string", indexed: false },
+    { name: "endpoint", type: "string", indexed: false },
+    { name: "ipfsHash", type: "string", indexed: false },
+    { name: "dataHash", type: "bytes32", indexed: false },
   ],
 } as const;
 
-export const newFeedbackEvent8004 = {
-  type: "event",
-  name: "NewFeedback",
-  inputs: [
-    { name: "agentId", type: "uint256", indexed: true },
-    { name: "clientAddress", type: "address", indexed: true },
-    { name: "score", type: "uint8", indexed: false },
-    { name: "tag1", type: "bytes32", indexed: true },
-    { name: "tag2", type: "bytes32", indexed: false },
-    { name: "fileuri", type: "string", indexed: false },
-  ],
-} as const;
-
-// Minimal ERC-8004 IdentityRegistry registration event, used to map agentId
-// to endpoint host on the leaderboard. Two plausible shapes, merged at read.
-export const registeredEventA = {
+// ERC-8004 IdentityRegistry registration event, exact shape from the deployed
+// contract. agentURI carries the endpoint host for leaderboard display.
+export const registeredEvent = {
   type: "event",
   name: "Registered",
   inputs: [
     { name: "agentId", type: "uint256", indexed: true },
-    { name: "agentDomain", type: "string", indexed: false },
-    { name: "agentAddress", type: "address", indexed: true },
-  ],
-} as const;
-
-export const registeredEventB = {
-  type: "event",
-  name: "AgentRegistered",
-  inputs: [
-    { name: "agentId", type: "uint256", indexed: true },
-    { name: "agentDomain", type: "string", indexed: false },
-    { name: "agentAddress", type: "address", indexed: false },
+    { name: "agentURI", type: "string", indexed: false },
+    { name: "owner", type: "address", indexed: true },
   ],
 } as const;

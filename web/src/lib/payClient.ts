@@ -1,7 +1,7 @@
 import type { PrivateKeyAccount } from "viem/accounts";
 import { bytesToHex } from "viem";
 import { mockUsdcAbi } from "@/lib/abi";
-import { addresses, anvil, PAYMENT_PATH } from "@/lib/config";
+import { addresses, anvil, PAYMENT_PATH, USDC_EIP712_VERSION } from "@/lib/config";
 import { publicClient, walletClientFor } from "@/lib/clients";
 import {
   decodePaymentRequired,
@@ -90,7 +90,7 @@ async function buildEip3009Payment(
   const signature = await account.signTypedData({
     domain: {
       name,
-      version: "1",
+      version: USDC_EIP712_VERSION,
       chainId: anvil.id,
       verifyingContract: addresses.mockUsdc,
     },
