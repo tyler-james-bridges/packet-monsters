@@ -1,0 +1,586 @@
+/* ============================================================================
+   Dock: acquisition price, the primary action, published odds.
+
+   Mobile first. The base layout is a single stacked column with the button
+   last, inside thumb reach. The desktop block at the bottom of this file
+   promotes it to a three zone band.
+
+   Deliberately borderless on desktop. A full width panel across the bottom
+   would sit on top of the altar; instead each side zone carries its own soft
+   corner wash so text stays legible while the scene reads through the gaps,
+   and the only hard edged object on the screen is the button.
+   ========================================================================= */
+
+.dock {
+  position: relative;
+  z-index: 30;
+  flex: 0 0 auto;
+  padding: 0 var(--gutter) var(--s4);
+  pointer-events: none;
+}
+
+/* The dock belongs to the vault view. When an overlay is open it fades out and
+   must stop swallowing clicks, including during the fade. */
+.hud:not([data-view='vault']) .dock,
+.hud:not([data-view='vault']) .dock-cell {
+  pointer-events: none;
+}
+
+.dock-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: end;
+  gap: var(--s4);
+}
+
+.dock-cell {
+  pointer-events: auto;
+  min-width: 0;
+}
+
+.cell-label {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s3);
+  font-size: var(--t-micro);
+  color: var(--ink-2);
+  font-weight: 600;
+}
+
+.cell-note {
+  font-size: var(--t-micro);
+  color: var(--ink-4);
+  font-weight: 600;
+}
+
+/* --- price ---------------------------------------------------------------- */
+
+.dock-price {
+  order: 1;
+  border-radius: var(--rad-l);
+}
+
+.price-line {
+  display: flex;
+  align-items: baseline;
+  gap: 9px;
+  margin-top: 4px;
+}
+
+.price-value {
+  font-size: var(--t-display);
+  font-weight: 600;
+  line-height: 0.98;
+  letter-spacing: -0.028em;
+  color: var(--ink-0);
+}
+
+.price-unit {
+  font-size: var(--t-label);
+  color: var(--ink-2);
+  font-weight: 600;
+}
+
+.price-split {
+  display: flex;
+  gap: 2px;
+  height: 3px;
+  margin: 10px 0 9px;
+  max-width: 260px;
+}
+
+.price-split span {
+  display: block;
+  width: calc(var(--w, 0) * 1%);
+  border-radius: 2px;
+  min-width: 2px;
+}
+
+.split-ev {
+  background: linear-gradient(90deg, rgba(var(--accent-rgb), 0.45), rgba(var(--accent-rgb), 0.85));
+}
+
+.split-fee {
+  background: var(--ink-3);
+}
+
+.price-breakdown {
+  display: flex;
+  gap: var(--s5);
+  max-width: 320px;
+}
+
+.pb {
+  display: grid;
+  gap: 2px;
+}
+
+.pb dt {
+  font-size: var(--t-micro);
+  color: var(--ink-3);
+}
+
+.pb dd {
+  font-size: var(--t-cap);
+  color: var(--ink-1);
+  line-height: 1;
+  font-weight: 550;
+}
+
+/* The headline economic claim. Desktop has the room to state it in words. */
+.price-claim {
+  display: none;
+  margin-top: 9px;
+  max-width: 290px;
+  font-size: var(--t-micro);
+  line-height: 1.5;
+  color: var(--ink-3);
+}
+
+/* --- action --------------------------------------------------------------- */
+
+.dock-action {
+  order: 3;
+  justify-self: stretch;
+  display: grid;
+  justify-items: center;
+  gap: var(--s3);
+  width: 100%;
+}
+
+.phases {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  width: 100%;
+  max-width: 360px;
+  padding-top: 1px;
+}
+
+.phase-rail {
+  position: absolute;
+  left: 12.5%;
+  right: 12.5%;
+  top: 5px;
+  height: 1px;
+  background: var(--line-1);
+  overflow: hidden;
+}
+
+.phase-rail-fill {
+  display: block;
+  height: 100%;
+  width: calc(var(--p, 0) * 100%);
+  background: var(--accent);
+  box-shadow: 0 0 8px rgba(var(--accent-rgb), 0.75);
+}
+
+.phase {
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+}
+
+.phase-pip {
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  border: 1px solid var(--line-2);
+  background: #080b12;
+  transition:
+    background-color var(--dur-base) var(--ease-out),
+    border-color var(--dur-base) var(--ease-out),
+    box-shadow var(--dur-base) var(--ease-out);
+}
+
+.phase-name {
+  font-size: 8.5px;
+  color: var(--ink-4);
+  letter-spacing: 0.14em;
+  text-indent: 0.07em;
+  font-weight: 600;
+  text-transform: uppercase;
+  transition: color var(--dur-base) var(--ease-out);
+}
+
+.phase[data-status='done'] .phase-pip {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.phase[data-status='done'] .phase-name {
+  color: var(--ink-2);
+}
+
+.phase[data-status='active'] .phase-pip {
+  background: var(--accent);
+  border-color: var(--accent);
+  box-shadow:
+    0 0 0 4px rgba(var(--accent-rgb), 0.16),
+    0 0 14px rgba(var(--accent-rgb), 0.85);
+}
+
+.phase[data-status='active'] .phase-name {
+  color: var(--ink-0);
+}
+
+/* --- the button ----------------------------------------------------------- */
+
+.pull {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  width: 100%;
+  max-width: 420px;
+  min-height: 58px;
+  padding: 10px var(--s6) 11px;
+  border-radius: 13px;
+  color: #05070c;
+  background: linear-gradient(180deg, #ffffff 0%, #e6ecf8 52%, #cfd9ec 100%);
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.2),
+    0 1px 0 rgba(255, 255, 255, 0.9) inset,
+    0 -1px 0 rgba(9, 14, 26, 0.14) inset,
+    0 14px 34px -14px rgba(150, 190, 255, 0.55),
+    0 3px 10px -4px rgba(0, 0, 0, 0.6);
+  transition:
+    transform var(--dur-fast) var(--ease-out),
+    box-shadow var(--dur-base) var(--ease-out),
+    background var(--dur-base) var(--ease-out),
+    color var(--dur-base) var(--ease-out);
+}
+
+.pull-content {
+  position: relative;
+  z-index: 2;
+  display: grid;
+  justify-items: center;
+  gap: 5px;
+}
+
+.pull-label {
+  font-size: var(--t-cap);
+  font-weight: 700;
+  letter-spacing: var(--tk-wide);
+  text-indent: calc(var(--tk-wide) / 2);
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.pull-cost {
+  font-size: var(--t-label);
+  font-weight: 550;
+  line-height: 1;
+  color: rgba(5, 7, 12, 0.66);
+}
+
+.pull-cost .unit {
+  color: rgba(5, 7, 12, 0.5);
+}
+
+.pull-sheen {
+  position: absolute;
+  z-index: 1;
+  inset: -40% -12%;
+  background: linear-gradient(
+    104deg,
+    rgba(255, 255, 255, 0) 38%,
+    rgba(255, 255, 255, 0.72) 50%,
+    rgba(255, 255, 255, 0) 62%
+  );
+  transform: translate3d(-120%, 0, 0);
+  opacity: 0;
+  transition:
+    transform 620ms var(--ease-out),
+    opacity var(--dur-base) var(--ease-out);
+  pointer-events: none;
+}
+
+.pull-fill {
+  position: absolute;
+  z-index: 0;
+  inset: 0;
+  width: 0;
+  opacity: 0;
+  background: linear-gradient(90deg, rgba(var(--accent-rgb), 0.3), rgba(var(--accent-rgb), 0.13));
+  border-right: 1px solid rgba(var(--accent-rgb), 0.6);
+  pointer-events: none;
+}
+
+/* idle: hover lifts, press compresses. Both are feedback rather than narrative,
+   so they stay in CSS using the shared easing tokens. Nothing here is linear. */
+.pull[data-state='idle']:hover {
+  transform: translate3d(0, -1px, 0);
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.32),
+    0 1px 0 rgba(255, 255, 255, 1) inset,
+    0 -1px 0 rgba(9, 14, 26, 0.12) inset,
+    0 20px 46px -16px rgba(160, 200, 255, 0.72),
+    0 4px 12px -4px rgba(0, 0, 0, 0.65);
+}
+
+.pull[data-state='idle']:hover .pull-sheen {
+  transform: translate3d(120%, 0, 0);
+  opacity: 1;
+}
+
+.pull[data-state='idle']:active {
+  transform: translate3d(0, 1px, 0) scale(0.994);
+  background: linear-gradient(180deg, #eef2fa 0%, #d7dfef 60%, #c3cee4 100%);
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.18),
+    0 1px 2px rgba(0, 0, 0, 0.5);
+  transition-duration: var(--dur-micro);
+}
+
+/* committing / sealed / resolving / revealed: the button stops being a call to
+   action and becomes a status object. It keeps its footprint so nothing in the
+   dock reflows mid pull. */
+.pull[data-state='committing'],
+.pull[data-state='sealed'],
+.pull[data-state='resolving'],
+.pull[data-state='revealed'],
+.pull[data-state='disabled'] {
+  color: var(--ink-0);
+  background: linear-gradient(180deg, rgba(15, 20, 31, 0.94), rgba(8, 11, 18, 0.96));
+  box-shadow:
+    0 0 0 1px var(--line-1),
+    0 10px 30px -18px rgba(0, 0, 0, 0.9);
+  transform: none;
+}
+
+.pull[data-state='committing'] .pull-cost,
+.pull[data-state='sealed'] .pull-cost,
+.pull[data-state='resolving'] .pull-cost,
+.pull[data-state='revealed'] .pull-cost,
+.pull[data-state='disabled'] .pull-cost {
+  color: var(--ink-3);
+}
+
+.pull[data-state='committing'] .pull-cost .unit,
+.pull[data-state='sealed'] .pull-cost .unit,
+.pull[data-state='resolving'] .pull-cost .unit,
+.pull[data-state='revealed'] .pull-cost .unit,
+.pull[data-state='disabled'] .pull-cost .unit {
+  color: var(--ink-4);
+}
+
+.pull[data-state='sealed'],
+.pull[data-state='resolving'] {
+  box-shadow:
+    0 0 0 1px rgba(var(--accent-rgb), 0.4),
+    0 0 30px -10px rgba(var(--accent-rgb), 0.5),
+    0 10px 30px -18px rgba(0, 0, 0, 0.9);
+}
+
+.pull[data-state='sealed'] .pull-fill,
+.pull[data-state='resolving'] .pull-fill,
+.pull[data-state='committing'] .pull-fill {
+  opacity: 1;
+  width: calc(var(--p, 0) * 100%);
+}
+
+.pull[data-state='revealed'] {
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.18),
+    0 0 34px -12px rgba(255, 255, 255, 0.32),
+    0 10px 30px -18px rgba(0, 0, 0, 0.9);
+}
+
+.pull[data-state='disabled'] {
+  color: var(--ink-3);
+}
+
+/* --- status line ---------------------------------------------------------- */
+
+.pull-status {
+  min-height: 30px;
+  max-width: 390px;
+  text-align: center;
+  font-size: var(--t-micro);
+  line-height: 1.5;
+  color: var(--ink-2);
+  text-wrap: balance;
+}
+
+.pull-status[data-tone='sealed'],
+.pull-status[data-tone='resolving'] {
+  color: var(--accent);
+}
+
+.pull-status[data-tone='revealed'] {
+  color: var(--ink-0);
+}
+
+/* --- odds ----------------------------------------------------------------- */
+
+.dock-odds {
+  order: 2;
+  width: 100%;
+  border-radius: var(--rad-l);
+}
+
+.dock-odds .cell-label {
+  justify-content: space-between;
+  margin-bottom: var(--s2);
+}
+
+/* Phone: two columns of tier and probability. The distribution bar and the
+   "1 in n" column are the first things to go; they are supporting detail and
+   the odds view carries them in full. */
+.odds-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 5px var(--s5);
+}
+
+.odds-row {
+  display: grid;
+  grid-template-columns: 6px 1fr auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.odds-bar,
+.odds-alt {
+  display: none;
+}
+
+.odds-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--hue);
+  box-shadow: 0 0 7px rgba(var(--hue-rgb), 0.75);
+}
+
+.odds-name {
+  font-size: 9px;
+  color: var(--ink-2);
+  letter-spacing: 0.13em;
+  margin-inline-end: -0.13em;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.odds-value {
+  text-align: right;
+  font-size: var(--t-cap);
+  font-weight: 550;
+  color: var(--ink-0);
+  line-height: 1;
+}
+
+.odds-foot {
+  margin-top: var(--s3);
+  padding-top: var(--s2);
+  border-top: 1px solid var(--line-0);
+  font-size: 8.5px;
+  letter-spacing: 0.1em;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+
+/* ============================================================================
+   Desktop: three zone band.
+   ========================================================================= */
+
+@media (min-width: 900px) {
+  .dock {
+    padding: 0 var(--gutter) var(--s6);
+  }
+
+  .dock-grid {
+    grid-template-columns: minmax(230px, 1fr) auto minmax(230px, 1fr);
+    gap: var(--s8);
+  }
+
+  .dock-price {
+    order: 0;
+    justify-self: start;
+    margin: calc(var(--s4) * -1) 0 0 calc(var(--s5) * -1);
+    padding: var(--s4) var(--s6) var(--s3) var(--s5);
+    background: radial-gradient(
+      128% 150% at 0% 100%,
+      rgba(4, 6, 11, 0.9) 0%,
+      rgba(4, 6, 11, 0.62) 46%,
+      rgba(4, 6, 11, 0) 78%
+    );
+  }
+
+  .price-claim {
+    display: block;
+  }
+
+  .dock-action {
+    order: 0;
+    justify-self: center;
+    width: min(380px, 100%);
+  }
+
+  .pull {
+    min-height: 62px;
+    padding: 11px var(--s7) 12px;
+  }
+
+  .dock-odds {
+    order: 0;
+    justify-self: end;
+    width: 100%;
+    max-width: 336px;
+    margin: calc(var(--s4) * -1) calc(var(--s5) * -1) 0 0;
+    padding: var(--s4) var(--s5) var(--s3) var(--s6);
+    background: radial-gradient(
+      128% 150% at 100% 100%,
+      rgba(4, 6, 11, 0.9) 0%,
+      rgba(4, 6, 11, 0.62) 46%,
+      rgba(4, 6, 11, 0) 78%
+    );
+  }
+
+  .dock-odds .cell-label {
+    margin-bottom: var(--s3);
+  }
+
+  .odds-list {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 6px;
+  }
+
+  .odds-row {
+    grid-template-columns: 6px 74px minmax(30px, 1fr) 52px 48px;
+    gap: 9px;
+  }
+
+  .odds-bar {
+    display: block;
+    position: relative;
+    height: 2px;
+    border-radius: 2px;
+    background: rgba(150, 170, 215, 0.13);
+    overflow: hidden;
+  }
+
+  .odds-bar b {
+    position: absolute;
+    inset: 0 auto 0 0;
+    width: calc(var(--w, 0) * 1%);
+    background: var(--hue);
+    border-radius: 2px;
+    opacity: 0.9;
+  }
+
+  .odds-alt {
+    display: block;
+    text-align: right;
+    font-size: var(--t-micro);
+    color: var(--ink-3);
+    line-height: 1;
+  }
+
+  .odds-foot {
+    padding-top: var(--s3);
+    text-align: right;
+  }
+}

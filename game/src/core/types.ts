@@ -127,6 +127,28 @@ export interface AppEvents {
   'reveal:settled': { position: VaultPosition; index: number };
   'pull:complete': { positions: VaultPosition[] };
   'camera:shake': { amount: number; duration: number };
+  /**
+   * Beat changes in the pack opening choreography, broadcast by the card stage.
+   * The camera rig, VFX and audio cut against this rather than re-deriving the
+   * sequence timing, so the picture and the subject never drift apart.
+   * `duration` is the authored length of the beat in seconds (0 if open ended).
+   */
+  'anim:beat': {
+    beat: 'idle' | 'charge' | 'burst' | 'impact' | 'turn' | 'settle';
+    rarity: number;
+    duration: number;
+  };
+  /**
+   * Live pose of whatever object is currently the subject (sealed packet, then
+   * the tumbling card, then the hero card). Emitted every frame with a reused
+   * payload object, so handlers must read it, not retain it.
+   */
+  'card:pose': { x: number; y: number; z: number; speed: number };
+  /**
+   * Focus distance from the camera to the current subject, in world units, so
+   * depth of field tracks where the card actually is. Emitted by the camera rig.
+   */
+  'camera:focus': { distance: number; range: number };
   'quality:changed': { settings: QualitySettings };
   'ui:navigate': { view: 'vault' | 'collection' | 'odds' };
   'audio:cue': { id: string; intensity?: number };

@@ -1,0 +1,36 @@
+<!doctype html>
+<!--
+  DEV ONLY. Card material review harness.
+
+  Not part of the application. vite build only emits index.html, so this file is
+  never bundled; it exists so the card surface can be reviewed in isolation
+  under controlled studio lighting without touching src/scene.
+
+  Serve with `npm run dev` and open:
+    http://127.0.0.1:5178/src/materials/preview.html?mode=grid
+    http://127.0.0.1:5178/src/materials/preview.html?mode=hero
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>DEV / card material preview</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        background: #05060a;
+        overflow: hidden;
+      }
+      canvas {
+        display: block;
+        width: 100vw;
+        height: 100vh;
+      }
+    </style>
+  </head>
+  <body>
+    <canvas id="stage"></canvas>
+    <script type="module" src="./preview.ts"></script>
+  </body>
+</html>

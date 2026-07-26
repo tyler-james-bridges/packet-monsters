@@ -109,7 +109,7 @@ page.on('console', (m) => {
 });
 
 async function discoverShots() {
-  await page.goto(`${base}?seed=${encodeURIComponent(SEED)}`, { waitUntil: 'load' });
+  await page.goto(`${base}?seed=${encodeURIComponent(SEED)}`, { waitUntil: 'load', timeout: 180000 });
   await page.waitForFunction(() => Boolean(window.__harness), null, { timeout: 30000 });
   return page.evaluate(() => window.__harness.shots);
 }

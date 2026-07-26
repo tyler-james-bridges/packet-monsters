@@ -1,0 +1,322 @@
+/* ============================================================================
+   Shell: layer stack, scrims, top bar.
+   ========================================================================= */
+
+.hud-root {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.hud {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom)
+    env(safe-area-inset-left);
+}
+
+/* --- scrims ---------------------------------------------------------------
+   Two gradients, no boxes. They exist so the chrome reads over both a near
+   black vault frame and the blown out flash of a legendary reveal, and they
+   stop well short of the centre so the card is never sitting in fog. */
+.scrim {
+  position: absolute;
+  left: 0;
+  right: 0;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.scrim-top {
+  top: 0;
+  height: 190px;
+  background: linear-gradient(
+    180deg,
+    rgba(3, 4, 8, 0.86) 0%,
+    rgba(3, 4, 8, 0.52) 42%,
+    rgba(3, 4, 8, 0) 100%
+  );
+}
+
+.scrim-bottom {
+  bottom: 0;
+  height: 340px;
+  background: linear-gradient(
+    0deg,
+    rgba(3, 4, 8, 0.9) 0%,
+    rgba(3, 4, 8, 0.66) 34%,
+    rgba(3, 4, 8, 0.22) 66%,
+    rgba(3, 4, 8, 0) 100%
+  );
+}
+
+/* Mobile: the readout is a sheet that sits directly on top of the dock, so the
+   stage layer pins its single child to the bottom of whatever space is left.
+   Desktop: the readout docks to the top right and the centre of the frame stays
+   clear for the card. */
+.stage-layer {
+  position: relative;
+  z-index: 12;
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  align-items: flex-end;
+  justify-content: stretch;
+  padding: var(--s2) var(--gutter);
+}
+
+.view-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  pointer-events: none;
+}
+
+/* ============================================================================
+   Top bar
+   ========================================================================= */
+
+.topbar {
+  position: relative;
+  z-index: 40;
+  flex: 0 0 auto;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  gap: var(--s4);
+  padding: var(--s4) var(--gutter) var(--s2);
+}
+
+.brand {
+  pointer-events: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 11px;
+  text-decoration: none;
+  color: inherit;
+  justify-self: start;
+  padding: 4px 6px 4px 2px;
+  border-radius: var(--rad-m);
+}
+
+.brand-mark {
+  width: 26px;
+  height: 26px;
+  flex: none;
+  overflow: visible;
+}
+
+.mark-shell {
+  fill: none;
+  stroke: var(--ink-1);
+  stroke-width: 1.1;
+  stroke-linejoin: round;
+  opacity: 0.9;
+}
+
+.mark-chamber {
+  fill: none;
+  stroke: var(--ink-3);
+  stroke-width: 1;
+  stroke-linejoin: round;
+  opacity: 0.72;
+}
+
+.mark-core {
+  fill: var(--accent);
+  filter: drop-shadow(0 0 4px rgba(var(--accent-rgb), 0.75));
+}
+
+.brand:hover .mark-shell {
+  stroke: var(--ink-0);
+}
+
+.brand-lockup {
+  display: grid;
+  gap: 2px;
+  line-height: 1;
+}
+
+.brand-name {
+  font-size: var(--t-cap);
+  font-weight: 650;
+  letter-spacing: 0.06em;
+  color: var(--ink-0);
+}
+
+.brand-sub {
+  font-size: var(--t-micro);
+  color: var(--ink-3);
+  letter-spacing: var(--tk-wide);
+  margin-inline-end: calc(var(--tk-wide) * -1);
+}
+
+/* --- nav ------------------------------------------------------------------ */
+
+.nav {
+  justify-self: end;
+}
+
+.nav-track {
+  pointer-events: auto;
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--line-0);
+  border-radius: var(--rad-pill);
+  background: rgba(7, 9, 15, 0.62);
+  backdrop-filter: var(--glass);
+  -webkit-backdrop-filter: var(--glass);
+}
+
+.nav-indicator {
+  position: absolute;
+  top: 3px;
+  bottom: 3px;
+  left: 0;
+  width: 0;
+  border-radius: var(--rad-pill);
+  background: rgba(255, 255, 255, 0.09);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.09);
+  pointer-events: none;
+}
+
+.nav-tab {
+  position: relative;
+  z-index: 1;
+  padding: 7px 16px 8px;
+  border-radius: var(--rad-pill);
+  color: var(--ink-3);
+  font-size: var(--t-label);
+  transition: color var(--dur-fast) var(--ease-out);
+}
+
+.nav-tab .tk {
+  letter-spacing: var(--tk);
+  margin-inline-end: calc(var(--tk) * -1);
+}
+
+.nav-tab:hover {
+  color: var(--ink-1);
+}
+
+.nav-tab[aria-selected='true'] {
+  color: var(--ink-0);
+}
+
+/* --- status --------------------------------------------------------------- */
+
+/* Vault telemetry is desktop only. On a phone the same figures live in the
+   dock and the odds view, so repeating them in a 430px header would be noise. */
+.status {
+  display: none;
+  pointer-events: auto;
+  justify-self: end;
+  align-items: center;
+  gap: var(--s5);
+}
+
+.status-live {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: var(--t-micro);
+  color: var(--ink-2);
+}
+
+.live-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--r1);
+  box-shadow: 0 0 0 3px rgba(82, 217, 138, 0.14), 0 0 9px rgba(82, 217, 138, 0.8);
+}
+
+.status-figures {
+  display: flex;
+  align-items: stretch;
+  gap: var(--s5);
+}
+
+.sf {
+  display: grid;
+  gap: 3px;
+  justify-items: end;
+  padding-left: var(--s5);
+  border-left: 1px solid var(--line-0);
+}
+
+.sf:first-child {
+  padding-left: 0;
+  border-left: 0;
+}
+
+.sf dt {
+  font-size: var(--t-micro);
+  color: var(--ink-3);
+}
+
+.sf dd {
+  font-size: var(--t-cap);
+  color: var(--ink-0);
+  line-height: 1;
+  font-weight: 550;
+}
+
+.sf .unit {
+  font-size: 8.5px;
+  margin-inline-start: 0.35em;
+}
+
+/* ============================================================================
+   Desktop enhancement. Mobile is the base layout above.
+   ========================================================================= */
+
+@media (min-width: 900px) {
+  .topbar {
+    grid-template-columns: 1fr auto 1fr;
+    gap: var(--s5);
+    padding: var(--s5) var(--gutter) var(--s3);
+  }
+
+  .nav {
+    justify-self: center;
+  }
+
+  .status {
+    display: flex;
+  }
+
+  .stage-layer {
+    align-items: flex-start;
+    justify-content: flex-end;
+    padding: var(--s3) var(--gutter);
+  }
+
+  .brand-mark {
+    width: 28px;
+    height: 28px;
+  }
+
+  .nav-tab {
+    padding: 8px 18px 9px;
+    font-size: var(--t-label);
+  }
+}
+
+/* Short landscape phones: reclaim vertical space from the header. */
+@media (max-height: 560px) and (orientation: landscape) {
+  .topbar {
+    padding-top: var(--s2);
+    padding-bottom: 0;
+  }
+
+  .scrim-bottom {
+    height: 230px;
+  }
+}
