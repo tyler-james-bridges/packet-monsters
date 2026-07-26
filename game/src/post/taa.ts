@@ -94,7 +94,7 @@ vec3 sampleHistory( vec2 uv ) {
 
 // Clip toward the box centre rather than clamping per axis: clamping snaps the
 // history onto a face of the box and shows up as a hard edge crawl.
-vec3 clipToBox( vec3 boxMin, vec3 boxMax, vec3 history, vec3 center ) {
+vec3 clipToBox( vec3 boxMin, vec3 boxMax, vec3 history ) {
   vec3 c = 0.5 * ( boxMax + boxMin );
   vec3 e = 0.5 * ( boxMax - boxMin ) + 1e-5;
   vec3 d = history - c;
@@ -162,7 +162,7 @@ void main() {
 
   vec3 historyRgb = sampleHistory( historyUv );
   vec3 historyY = rgbToYCoCg( toneIn( historyRgb ) );
-  vec3 clipped = clipToBox( boxMin, boxMax, historyY, centerY );
+  vec3 clipped = clipToBox( boxMin, boxMax, historyY );
 
   // Feedback drops off with screen space motion so fast pans resolve quickly
   // instead of dragging a tail, and collapses entirely off screen.

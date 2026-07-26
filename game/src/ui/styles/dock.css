@@ -69,7 +69,7 @@
 
 .cell-note {
   font-size: var(--t-micro);
-  color: var(--ink-4);
+  color: var(--ink-3);
   font-weight: 600;
 }
 
@@ -547,11 +547,11 @@
     pointer-events: none;
     background: radial-gradient(
       50% 50% at 50% 50%,
-      rgba(3, 5, 9, 0.94) 0%,
-      rgba(3, 5, 9, 0.9) 30%,
-      rgba(3, 5, 9, 0.66) 54%,
-      rgba(3, 5, 9, 0.3) 76%,
-      rgba(3, 5, 9, 0.08) 90%,
+      rgba(3, 5, 9, 0.95) 0%,
+      rgba(3, 5, 9, 0.94) 44%,
+      rgba(3, 5, 9, 0.82) 62%,
+      rgba(3, 5, 9, 0.5) 78%,
+      rgba(3, 5, 9, 0.16) 91%,
       rgba(3, 5, 9, 0) 100%
     );
   }
@@ -562,7 +562,7 @@
   }
 
   .dock-price::before {
-    inset: -78px -180px -104px -190px;
+    inset: -66px -132px -92px -150px;
   }
 
   .price-claim {
@@ -578,13 +578,14 @@
   /* Weaker than the side zones: the button carries its own contrast and the
      altar sits directly behind this column. */
   .dock-action::before {
-    inset: -60px -120px -86px;
+    inset: -54px -104px -80px;
     background: radial-gradient(
       50% 50% at 50% 50%,
-      rgba(3, 5, 9, 0.82) 0%,
-      rgba(3, 5, 9, 0.74) 30%,
-      rgba(3, 5, 9, 0.5) 55%,
-      rgba(3, 5, 9, 0.2) 77%,
+      rgba(3, 5, 9, 0.9) 0%,
+      rgba(3, 5, 9, 0.86) 42%,
+      rgba(3, 5, 9, 0.68) 60%,
+      rgba(3, 5, 9, 0.36) 78%,
+      rgba(3, 5, 9, 0.1) 91%,
       rgba(3, 5, 9, 0) 100%
     );
   }
@@ -602,7 +603,7 @@
   }
 
   .dock-odds::before {
-    inset: -76px -190px -102px -170px;
+    inset: -64px -150px -92px -132px;
   }
 
   .dock-odds .cell-label {
