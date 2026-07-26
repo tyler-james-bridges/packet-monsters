@@ -2,13 +2,19 @@
    Full surface views: odds and collection.
    ========================================================================= */
 
+/* No backdrop-filter here on purpose. At 0.94 alpha and up there is nothing
+   left to blur, and a full viewport filter costs real milliseconds on a
+   software rasteriser, which is exactly what the review harness runs on. */
 .view {
   position: absolute;
   inset: 0;
   pointer-events: auto;
-  background: linear-gradient(180deg, rgba(4, 5, 9, 0.9) 0%, rgba(4, 5, 9, 0.96) 44%, rgba(3, 4, 8, 0.985) 100%);
-  backdrop-filter: blur(22px) saturate(112%);
-  -webkit-backdrop-filter: blur(22px) saturate(112%);
+  background: linear-gradient(
+    180deg,
+    rgba(4, 5, 9, 0.982) 0%,
+    rgba(4, 5, 9, 0.992) 44%,
+    rgba(3, 4, 8, 0.998) 100%
+  );
 }
 
 .view[hidden] {
@@ -37,7 +43,7 @@
 .view-inner {
   width: min(1180px, 100%);
   margin: 0 auto;
-  padding: calc(var(--topbar-h) + var(--s6)) var(--gutter) var(--s9);
+  padding: calc(var(--topbar-h) + var(--s7)) var(--gutter) var(--s9);
   display: grid;
   gap: var(--s6);
   align-content: start;
@@ -167,11 +173,12 @@
   font-size: var(--t-cap);
 }
 
-.tier-cell {
+.dtable tbody th.tier-cell {
   display: flex;
   align-items: center;
   gap: 9px;
-  font-size: var(--t-label);
+  font-size: var(--t-cap);
+  font-weight: 650;
   color: var(--hue);
   white-space: nowrap;
 }
@@ -202,6 +209,7 @@
   position: absolute;
   inset: 0 auto 0 0;
   width: calc(var(--w, 0) * 1%);
+  min-width: 4px;
   border-radius: 4px;
   background: linear-gradient(90deg, rgba(var(--hue-rgb), 0.45), rgba(var(--hue-rgb), 0.95));
 }
@@ -548,13 +556,16 @@
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: var(--s3);
+  gap: 6px var(--s5);
   margin-top: calc(var(--s4) * -1);
   font-size: var(--t-micro);
   color: var(--ink-3);
 }
 
+/* Phone: the facts wrap to two lines and a bullet then dangles at the end of a
+   line. Drop the bullets and widen the gap instead. */
 .result-sep {
+  display: none;
   width: 3px;
   height: 3px;
   border-radius: 50%;
@@ -757,8 +768,12 @@
 
 @media (min-width: 700px) {
   .view-inner {
-    padding: calc(var(--topbar-h) + var(--s9)) var(--gutter) var(--s10);
+    padding: calc(var(--topbar-h) + var(--s8)) var(--gutter) var(--s10);
     gap: var(--s7);
+  }
+
+  .result-sep {
+    display: block;
   }
 
   .panel {

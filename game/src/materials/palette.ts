@@ -173,8 +173,11 @@ export const RARITY_STYLES: RarityStyle[] = [
     clearcoat: 0.3,
     clearcoatRoughness: 0.34,
     roughness: 0.62,
-    iridescence: 0.0,
-    anisotropy: 0.0,
+    // Not zero. A matte varnish really does carry a whisper of film, and
+    // keeping both terms non-zero on every rarity means three compiles the card
+    // shader exactly once for the whole vault instead of once per feature set.
+    iridescence: 0.035,
+    anisotropy: 0.04,
     emboss: 0.0,
   },
   // 1 UNCOMMON: satin varnish, bronze foil on the marks only.

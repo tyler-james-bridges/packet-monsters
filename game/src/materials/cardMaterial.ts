@@ -56,6 +56,13 @@ export interface CardMaterial {
    * [0] front face, [1] back face, [2] cut edge. Pass straight to THREE.Mesh.
    */
   readonly materials: THREE.Material[];
+  /**
+   * The same materials in THREE.BoxGeometry group order,
+   * [+X, -X, +Y, -Y, +Z front, -Z back], for a stage still using a box. The
+   * printed core on the cut edge and the rolled corner only exist on
+   * `createCardGeometry`, so this is a compatibility path, not the target.
+   */
+  readonly boxMaterials: THREE.Material[];
   readonly front: THREE.MeshPhysicalMaterial;
   readonly back: THREE.MeshPhysicalMaterial;
   readonly edge: THREE.MeshPhysicalMaterial;
@@ -69,6 +76,15 @@ export interface CardMaterial {
   setSurge(v: number): void;
   /** 0..1 laminate gloss. 1 is factory fresh. */
   setGloss(v: number): void;
+  /**
+   * Recompose the printed face at a different pixel width. Use 1024 for the
+   * hero card and 512 for cards in a fan: a 1024 face costs 7.8 MB and a 512
+   * face costs 2.0 MB, so this is the lever that keeps a ten card pull inside
+   * the GPU budget. Downgrades are ignored while another holder wants detail.
+   */
+  setFaceDetail(pixelWidth: number): void;
+  /** Current printed face width in pixels. */
+  readonly faceResolution: number;
   /** Drop one reference. The face texture is freed once nothing holds it. */
   release(): void;
 }
@@ -106,6 +122,7 @@ interface Entry {
   serial: number;
   faceTex: THREE.DataTexture;
   faceBytes: number;
+  faceRes: number;
   front: THREE.MeshPhysicalMaterial;
   back: THREE.MeshPhysicalMaterial;
   edge: THREE.MeshPhysicalMaterial;
@@ -310,7 +327,7 @@ function foilVectors(
     seedV: new THREE.Vector4(Math.cos(a), Math.sin(a), scale, phase),
     params: new THREE.Vector4(gain, rs.emboss * (ghost ? 1.4 : 1), rs.foilSpread >= 2 ? 0.55 + rs.foil * 0.6 : 0.12, 0.35 + rs.foil * 0.9),
     film: new THREE.Vector4(base, rangeNm, filmIor, substrateIor),
-    streak: new THREE.Vector4(60 + rs.anisotropy * 260, 0.55 + rs.anisotropy * 1.5, 0.1 + (1 - rs.foil) * 0.18, 3.4),
+    streak: new THREE.Vector4(70 + rs.anisotropy * 320, 0.4 + rs.anisotropy * 1.1, 0.26 + (1 - rs.foil) * 0.2, 3.2),
     metal: new THREE.Vector4(ghost ? 0.55 : 0.92, rs.foil * (surface === 'front' ? 0.9 : 0.7), 0.6, 0),
     tint,
   };
@@ -340,7 +357,7 @@ function buildMaterial(
 
   // Uncoated stock has fibre sheen. It is what keeps a common card from
   // looking like painted plastic.
-  m.sheen = ghost ? 0.7 : 0.15 + (1 - rs.clearcoat) * 0.5;
+  m.sheen = ghost ? 0.4 : 0.06 + (1 - rs.clearcoat) * 0.26;
   m.sheenRoughness = 0.85;
   m.sheenColor = new THREE.Color(...(ghost ? [0.55, 0.78, 0.7] : [0.95, 0.93, 0.88]));
 
@@ -424,6 +441,9 @@ export function createCardMaterial(
   if (existing) {
     existing.refs++;
     existing.serial = ++serialCounter;
+    if (opts.faceResolution && opts.faceResolution > existing.faceRes) {
+      existing.handle.setFaceDetail(opts.faceResolution);
+    }
     return existing.handle;
   }
 
@@ -457,6 +477,7 @@ export function createCardMaterial(
     serial: ++serialCounter,
     faceTex,
     faceBytes: texBytes(plates.color.w, plates.color.h, true),
+    faceRes: res,
     front: front.mat,
     back: back.mat,
     edge: edge.mat,
@@ -470,6 +491,7 @@ export function createCardMaterial(
   entry.handle = {
     card,
     materials: [front.mat, back.mat, edge.mat],
+    boxMaterials: [edge.mat, edge.mat, edge.mat, edge.mat, front.mat, back.mat],
     front: front.mat,
     back: back.mat,
     edge: edge.mat,
@@ -493,6 +515,27 @@ export function createCardMaterial(
       back.mat.clearcoat = rs.clearcoat * g;
       edge.mat.clearcoat = rs.clearcoat * 0.25 * g;
     },
+    get faceResolution() {
+      return entry.faceRes;
+    },
+    setFaceDetail(pixelWidth: number) {
+      const px = Math.max(128, Math.round(pixelWidth));
+      if (px === entry.faceRes) return;
+      const next = composeFace(card, px);
+      const tex = makeTexture(mergePlates(next.color, next.foil), next.color.w, next.color.h, {
+        srgb: true,
+        anisotropy: s.anisotropy,
+      });
+      tex.name = `face-${card.id}`;
+      const old = entry.faceTex;
+      entry.faceTex = tex;
+      entry.faceRes = px;
+      entry.faceBytes = texBytes(next.color.w, next.color.h, true);
+      front.mat.map = tex;
+      // Swapping a map for another of the same kind does not change the
+      // program, so no recompile is triggered here.
+      old.dispose();
+    },
     release() {
       entry.refs = Math.max(0, entry.refs - 1);
       if (entry.refs === 0) trim(s.faceBudgetBytes);
@@ -511,6 +554,16 @@ export function createCardMaterial(
  */
 export function prewarmCardMaterials(cards: CardRecord[], ctx: AppContext, opts: CardMaterialOptions = {}): void {
   for (const card of cards) createCardMaterial(card, ctx, opts).release();
+}
+
+/**
+ * Change the byte budget for released face textures and trim immediately.
+ * Referenced cards are never evicted, so this only bounds the warm cache.
+ */
+export function setFaceTextureBudget(bytes: number): void {
+  if (!shared) return;
+  shared.faceBudgetBytes = Math.max(0, bytes);
+  trim(shared.faceBudgetBytes);
 }
 
 export function cardMaterialStats(): CardMaterialStats {

@@ -149,7 +149,7 @@ export function patchFloorReflection(
     uReflectMatrix: { value: reflection.textureMatrix },
     uReflectStrength: { value: strength },
     uReflectMaxLod: { value: reflection.maxLod },
-    uReflectDistort: { value: 0.02 },
+    uReflectDistort: { value: 0.012 },
     uReflectTint: { value: tint.clone() },
   };
 
@@ -193,7 +193,7 @@ export function patchFloorReflection(
 
           float reflDist = length( vReflWorld - cameraPosition );
           float reflLod = uReflectMaxLod * clamp(
-            roughnessFactor * 1.9 + reflDist * 0.030, 0.0, 0.95 );
+            roughnessFactor * 1.1 + reflDist * 0.022, 0.0, 0.62 );
 
           vec3 reflColor = textureLod( uReflectMap, reflUv, reflLod ).rgb;
 

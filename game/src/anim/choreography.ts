@@ -112,7 +112,7 @@ export const CHOREO: readonly Choreo[] = [
   {
     chargeDur: 0.72,
     holdDur: 0.1,
-    ejectSpeed: 2.35,
+    ejectSpeed: 3.0,
     ejectForward: 0.3,
     ejectSpin: 7.5,
     maxFlight: 1.5,
@@ -137,7 +137,7 @@ export const CHOREO: readonly Choreo[] = [
   {
     chargeDur: 0.86,
     holdDur: 0.14,
-    ejectSpeed: 2.65,
+    ejectSpeed: 3.3,
     ejectForward: 0.34,
     ejectSpin: 8.6,
     maxFlight: 1.6,
@@ -162,7 +162,7 @@ export const CHOREO: readonly Choreo[] = [
   {
     chargeDur: 1.05,
     holdDur: 0.2,
-    ejectSpeed: 2.95,
+    ejectSpeed: 3.7,
     ejectForward: 0.36,
     ejectSpin: 10.2,
     maxFlight: 1.7,
@@ -187,7 +187,7 @@ export const CHOREO: readonly Choreo[] = [
   {
     chargeDur: 1.25,
     holdDur: 0.3,
-    ejectSpeed: 3.2,
+    ejectSpeed: 4.0,
     ejectForward: 0.38,
     ejectSpin: 11.8,
     maxFlight: 1.8,
@@ -212,7 +212,7 @@ export const CHOREO: readonly Choreo[] = [
   {
     chargeDur: 1.5,
     holdDur: 0.46,
-    ejectSpeed: 3.55,
+    ejectSpeed: 4.35,
     ejectForward: 0.4,
     ejectSpin: 13.5,
     maxFlight: 2.0,
@@ -245,7 +245,7 @@ export const STAGE = {
   plinthTop: 0.62,
   plinthRadius: 0.85,
   /** Resting centre of the sealed packet. */
-  packetY: 1.0,
+  packetY: 1.14,
   /** Hero pose of the revealed card. */
   heroPos: new THREE.Vector3(0, 1.34, 0.5),
 } as const;

@@ -16,3 +16,13 @@ fs_permissions = [
 
 [fuzz]
 runs = 256
+
+# SealedVault's invariant suite drives a handler whose actions self-guard their
+# preconditions, so in principle nothing should revert. It is left at
+# fail_on_revert = false until the suite has actually been run end to end;
+# flip it to true once it has, so a guard regression fails loudly instead of
+# being silently skipped.
+[invariant]
+runs = 128
+depth = 64
+fail_on_revert = false

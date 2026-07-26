@@ -22,11 +22,18 @@ export const CHAMBER = {
   pilasters: 8,
 
   daisRadius: 2.3,
-  daisHeight: 0.3,
+  daisHeight: 0.2,
 
   /** Widest radius of the altar, used by the volumetric shadow test. */
   plinthRadius: 1.1,
-  plinthTopY: 1.02,
+  /**
+   * The altar's top face. This is a contract, not a taste call: the card
+   * physics in src/anim/choreography.ts resolves its contact plane against
+   * STAGE.plinthTop = 0.62 with STAGE.plinthRadius = 0.85, so the machined cap
+   * below lands exactly there. Move it and the card tumbles through the altar.
+   */
+  plinthTopY: 0.62,
+  plinthCapRadius: 0.885,
 
   /** Where the hero card settles. */
   cardY: 1.35,

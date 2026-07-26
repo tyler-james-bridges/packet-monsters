@@ -1,6 +1,6 @@
 import { h, on, qs, qsa } from '../dom';
 import { Dur, Ease, animate, claim } from '../motion';
-import { bps, ethFromWei, groupInt } from '../format';
+import { bps, ethFromWei, ethScale, groupInt } from '../format';
 import type { VaultEconomics } from '../vaultAccess';
 
 export type ViewId = 'vault' | 'odds' | 'collection';
@@ -157,7 +157,7 @@ export function createTopBar(options: { onNavigate(view: ViewId): void }): TopBa
 
   function setEconomics(econ: VaultEconomics): void {
     fieldCount.textContent = groupInt(String(econ.count));
-    fieldTvl.innerHTML = `${ethFromWei(econ.totalBacking, 2)}<span class="unit">ETH</span>`;
+    fieldTvl.innerHTML = `${ethFromWei(econ.totalBacking, Math.min(ethScale(econ.totalBacking), 4))}<span class="unit">ETH</span>`;
     fieldFee.textContent = bps(econ.feeBps);
   }
 

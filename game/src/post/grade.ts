@@ -1,5 +1,7 @@
 import * as THREE from 'three';
 import { GLSL_COMMON, ScreenPass } from './common';
+import { COC_GLSL, cocUniforms } from './dof';
+import type { DofOptions } from './dof';
 import { buildGradeLut, lutScaleOffset, VAULT_LOOK } from './lut';
 
 /**
@@ -40,6 +42,7 @@ import { buildGradeLut, lutScaleOffset, VAULT_LOOK } from './lut';
 
 const GRADE_FRAG = /* glsl */ `
 ${GLSL_COMMON}
+${COC_GLSL}
 
 in vec2 vUv;
 out vec4 fragColor;
@@ -48,6 +51,11 @@ uniform sampler2D tColor;
 uniform sampler2D tBloom;
 uniform sampler2D tMeter;
 uniform sampler3D tLut;
+#ifdef DOF_ENABLED
+uniform sampler2D tDofFar;
+uniform sampler2D tDofNear;
+uniform sampler2D tDepth;
+#endif
 
 uniform float uExposureScale;    // surge modulation on top of the metered value
 uniform float uBloomStrength;
@@ -160,11 +168,37 @@ void main() {
     texture( tColor, uvB ).b
   );
 
-  vec3 bloom = vec3(
-    texture( tBloom, uvR ).r,
-    texture( tBloom, uvG ).g,
-    texture( tBloom, uvB ).b
-  );
+  #ifdef DOF_ENABLED
+  // Full resolution defocus composite. The gather already produced a half
+  // resolution version for the bloom chain to feed on; this is the sharp
+  // resolution one, done here so the chain never pays for an extra full screen
+  // target just to hand the result to the next pass.
+  //
+  // The two blurred fields are sampled on axis rather than per channel. Lateral
+  // aberration on a layer whose finest detail is already tens of pixels across
+  // is not resolvable, and skipping it saves four fullscreen fetches.
+  {
+    float focus = texture( tMeter, vec2( 0.5 ) ).g;
+    float z = linearDepth( texture( tDepth, uvG ).x, uNear, uFar );
+    float coc = cocRadius( z, focus );
+
+    vec3 far = texture( tDofFar, uvG ).rgb;
+    vec4 near = texture( tDofNear, uvG );
+
+    // Ramp the far field in over the first fifth of the maximum radius so the
+    // exit from critical focus is a gradient, not a visible contour.
+    float ft = sat1( coc / max( uMaxRadius * 0.22, 1e-3 ) );
+    float farBlend = ft * ft * ( 3.0 - 2.0 * ft );
+
+    color = mix( color, far, farBlend );
+    color = mix( color, near.rgb, sat1( near.a ) );
+  }
+  #endif
+
+  // The bloom chain is a wide, low frequency field. Fringing a signal whose
+  // finest detail is already tens of pixels across is invisible, so it is
+  // sampled once and two fullscreen fetches are saved.
+  vec3 bloom = texture( tBloom, uvG ).rgb;
 
   // Exposure is resolved once, by the meter, and shared. The bloom chain has
   // already been scaled by the same value, so it is added after exposure, not
@@ -254,8 +288,9 @@ export class GradePass {
   readonly pass: ScreenPass;
   private lut: THREE.Data3DTexture;
   private options: GradeOptions;
+  private dofOn = false;
 
-  constructor(options: GradeOptions = DEFAULT_GRADE) {
+  constructor(options: GradeOptions = DEFAULT_GRADE, dofDefaults: DofOptions) {
     this.options = { ...options };
     const lutSize = 33;
     this.lut = buildGradeLut(VAULT_LOOK, lutSize);
@@ -266,6 +301,10 @@ export class GradePass {
       tBloom: { value: null },
       tMeter: { value: null },
       tLut: { value: this.lut },
+      tDofFar: { value: null },
+      tDofNear: { value: null },
+      tDepth: { value: null },
+      ...cocUniforms(dofDefaults),
       uExposureScale: { value: 1 },
       uBloomStrength: { value: options.bloomStrength },
       uCA: { value: options.chromaticAberration },
@@ -308,6 +347,45 @@ export class GradePass {
 
   setAspect(aspect: number): void {
     this.pass.set('uAspect', aspect);
+  }
+
+  /**
+   * Mirrors the DOF pass state so the inline composite uses exactly the same
+   * circle of confusion the gather was built with. Toggling recompiles, which
+   * only ever happens on a quality tier change.
+   */
+  setDof(enabled: boolean): void {
+    if (enabled === this.dofOn) return;
+    this.dofOn = enabled;
+    if (enabled) {
+      this.pass.define('DOF_ENABLED', 1);
+    } else {
+      delete this.pass.material.defines.DOF_ENABLED;
+      this.pass.material.needsUpdate = true;
+    }
+  }
+
+  /** Keeps the grade's copy of the lens parameters in step with the DOF pass. */
+  syncLens(o: {
+    focal: number;
+    fStop: number;
+    sensorHeight: number;
+    bokehScale: number;
+    maxRadius: number;
+    focusRange: number;
+    heightPixels: number;
+    near: number;
+    far: number;
+  }): void {
+    this.pass.set('uFocalLength', o.focal);
+    this.pass.set('uFStop', o.fStop);
+    this.pass.set('uSensorHeight', o.sensorHeight / 1000);
+    this.pass.set('uBokehScale', o.bokehScale);
+    this.pass.set('uMaxRadius', o.maxRadius);
+    this.pass.set('uFocusRange', o.focusRange);
+    this.pass.set('uHeightPixels', o.heightPixels);
+    this.pass.set('uNear', o.near);
+    this.pass.set('uFar', o.far);
   }
 
   dispose(): void {

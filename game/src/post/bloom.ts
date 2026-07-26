@@ -253,12 +253,26 @@ export class BloomChain {
     this.prefilter.set('uExposureScale', scale);
   }
 
-  render(renderer: THREE.WebGLRenderer, runner: PassRunner, source: THREE.Texture): void {
+  /**
+   * The source may be the full resolution frame or, when DOF is on, the half
+   * resolution defocus composite. The prefilter needs the source's own texel
+   * size for its thirteen tap footprint, so it is passed in rather than assumed.
+   */
+  render(
+    renderer: THREE.WebGLRenderer,
+    runner: PassRunner,
+    source: THREE.Texture,
+    sourceWidth: number,
+    sourceHeight: number
+  ): void {
     if (!this.down.length) return;
     const n = this.down.length;
 
     this.prefilter.set('tSource', source);
-    (this.prefilter.uniforms.uTexel.value as THREE.Vector2).set(1 / this.width, 1 / this.height);
+    (this.prefilter.uniforms.uTexel.value as THREE.Vector2).set(
+      1 / Math.max(1, sourceWidth),
+      1 / Math.max(1, sourceHeight)
+    );
     runner.render(renderer, this.prefilter, this.down[0]);
 
     for (let i = 1; i < n; i++) {

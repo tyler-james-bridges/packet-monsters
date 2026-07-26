@@ -22,7 +22,7 @@ import type { PassRunner } from './common';
  * the occlusion rule: foreground spills across background, never the reverse.
  */
 
-const COC_GLSL = /* glsl */ `
+export const COC_GLSL = /* glsl */ `
 uniform float uFocalLength;   // metres
 uniform float uFStop;
 uniform float uSensorHeight;  // metres
@@ -91,6 +91,11 @@ ${GLSL_COMMON}
 in vec2 vUv;
 layout( location = 0 ) out vec4 outFar;
 layout( location = 1 ) out vec4 outNear;
+// Attachment two is the half resolution composite. Bloom reads it instead of
+// the sharp image, so glare is generated from the defocused frame the way it is
+// in a real lens, and it costs one extra write of a quarter sized buffer rather
+// than a whole extra full resolution pass.
+layout( location = 2 ) out vec4 outComposite;
 
 uniform sampler2D tPrep;
 uniform vec2 uTexel;        // half resolution texel size
@@ -143,13 +148,21 @@ void main() {
     nearW += wn;
   }
 
-  // The centre sample always belongs to the far buffer at unit weight so an in
-  // focus pixel resolves to exactly itself.
-  float centerW = step( -1e-4, center.a ) * 1.0;
-  farAcc += center.rgb * centerW;
-  farW += centerW;
+  // The centre sample joins whichever field it belongs to at unit weight, so an
+  // in focus pixel resolves to exactly itself and a foreground pixel whose own
+  // circle of confusion is too small to reach any tap still contributes its own
+  // colour rather than leaving the near buffer empty.
+  float centerFar = step( -1e-4, center.a );
+  farAcc += center.rgb * centerFar;
+  farW += centerFar;
 
-  outFar = vec4( farAcc / max( farW, 1e-4 ), 1.0 );
+  float centerNear = 1.0 - centerFar;
+  nearAcc += center.rgb * centerNear;
+  nearW += centerNear;
+
+  // If nothing at all landed in the far field, fall back to the centre rather
+  // than emitting black, which would show up as a dark halo on the composite.
+  outFar = vec4( farW > 1e-4 ? farAcc / farW : center.rgb, 1.0 );
 
   // Coverage alpha. A foreground with a small circle of confusion only reaches
   // a handful of taps, so the metered alpha is floored by the receiving pixel's
@@ -157,43 +170,33 @@ void main() {
   // semi transparent.
   float alpha = sat1( nearW * 2.0 / float( TAPS ) );
   alpha = max( alpha, sat1( -center.a * uMaxRadius * 0.6 ) );
-  outNear = vec4( nearAcc / max( nearW, 1e-4 ), alpha );
-}
-`;
+  outNear = vec4( nearW > 1e-4 ? nearAcc / nearW : center.rgb, alpha );
 
-const COMPOSITE_FRAG = /* glsl */ `
-${GLSL_COMMON}
-${COC_GLSL}
-
-in vec2 vUv;
-out vec4 fragColor;
-
-uniform sampler2D tColor;
-uniform sampler2D tFar;
-uniform sampler2D tNear;
-uniform sampler2D tDepth;
-uniform sampler2D tMeter;
-
-void main() {
-  vec3 sharp = texture( tColor, vUv ).rgb;
-  float focus = texture( tMeter, vec2( 0.5 ) ).g;
-  float z = linearDepth( texture( tDepth, vUv ).x, uNear, uFar );
-  float coc = cocRadius( z, focus );
-
-  vec3 far = texture( tFar, vUv ).rgb;
-  vec4 near = texture( tNear, vUv );
-
-  // Ramp the far field in over the first pixel and a half of defocus so the
-  // transition out of critical focus is smooth rather than a visible band.
-  float t = sat1( coc / max( uMaxRadius * 0.22, 1e-3 ) );
+  // Same compositing rule the full resolution grade applies: far field under
+  // the sharp image gated by the receiving pixel's own CoC, near field over the
+  // top with its coverage. center.a is already normalised to the max radius.
+  float t = sat1( center.a / 0.22 );
   float farBlend = t * t * ( 3.0 - 2.0 * t );
-
-  vec3 color = mix( sharp, far, farBlend );
-  color = mix( color, near.rgb, sat1( near.a ) );
-
-  fragColor = vec4( color, 1.0 );
+  vec3 comp = mix( center.rgb, outFar.rgb, farBlend );
+  comp = mix( comp, outNear.rgb, sat1( alpha ) );
+  outComposite = vec4( comp, 1.0 );
 }
 `;
+
+/** The uniform block that backs COC_GLSL. Shared with the grade pass. */
+export function cocUniforms(options: DofOptions): Record<string, THREE.IUniform> {
+  return {
+    uFocalLength: { value: 0.035 },
+    uFStop: { value: options.fStop },
+    uSensorHeight: { value: options.sensorHeight / 1000 },
+    uBokehScale: { value: options.bokehScale },
+    uMaxRadius: { value: options.maxRadius },
+    uFocusRange: { value: 0.75 },
+    uHeightPixels: { value: 1000 },
+    uNear: { value: 0.05 },
+    uFar: { value: 200 },
+  };
+}
 
 export interface DofOptions {
   /** Sensor height in millimetres. 24 is a full frame stills sensor. */
@@ -207,36 +210,33 @@ export interface DofOptions {
   aperture: number;
 }
 
+export interface DofTextures {
+  far: THREE.Texture;
+  near: THREE.Texture;
+  /** Half resolution composite, the input to the bloom chain. */
+  composite: THREE.Texture;
+  width: number;
+  height: number;
+}
+
 export class DofPass {
   private prep: ScreenPass;
   private gather: ScreenPass;
-  private composite: ScreenPass;
   private prepTarget: THREE.WebGLRenderTarget | null = null;
   private gatherTarget: THREE.WebGLRenderTarget | null = null;
-  private outTarget: THREE.WebGLRenderTarget | null = null;
   private width = 1;
   private height = 1;
-  private focusRange = 0.6;
+  private focusRange = 0.75;
+  private focalLength = 0.035;
+  private activeFStop = 2.2;
 
   constructor(private options: DofOptions) {
-    const cocUniforms = (): Record<string, THREE.IUniform> => ({
-      uFocalLength: { value: 0.035 },
-      uFStop: { value: options.fStop },
-      uSensorHeight: { value: options.sensorHeight / 1000 },
-      uBokehScale: { value: options.bokehScale },
-      uMaxRadius: { value: options.maxRadius },
-      uFocusRange: { value: 0.6 },
-      uHeightPixels: { value: 1000 },
-      uNear: { value: 0.05 },
-      uFar: { value: 200 },
-    });
-
     this.prep = new ScreenPass(PREP_FRAG, {
       tColor: { value: null },
       tDepth: { value: null },
       tMeter: { value: null },
       uFullTexel: { value: new THREE.Vector2() },
-      ...cocUniforms(),
+      ...cocUniforms(options),
     });
     this.gather = new ScreenPass(
       GATHER_FRAG,
@@ -248,25 +248,15 @@ export class DofPass {
       },
       { TAPS: options.taps }
     );
-    this.composite = new ScreenPass(COMPOSITE_FRAG, {
-      tColor: { value: null },
-      tFar: { value: null },
-      tNear: { value: null },
-      tDepth: { value: null },
-      tMeter: { value: null },
-      ...cocUniforms(),
-    });
   }
 
   configure(options: DofOptions): void {
     const tapsChanged = options.taps !== this.options.taps;
     this.options = options;
-    for (const p of [this.prep, this.composite]) {
-      p.set('uFStop', options.fStop);
-      p.set('uSensorHeight', options.sensorHeight / 1000);
-      p.set('uBokehScale', options.bokehScale);
-      p.set('uMaxRadius', options.maxRadius);
-    }
+    this.prep.set('uFStop', options.fStop);
+    this.prep.set('uSensorHeight', options.sensorHeight / 1000);
+    this.prep.set('uBokehScale', options.bokehScale);
+    this.prep.set('uMaxRadius', options.maxRadius);
     this.gather.set('uMaxRadius', options.maxRadius * 0.5);
     this.gather.set('uAperture', options.aperture);
     if (tapsChanged) this.gather.define('TAPS', options.taps);
@@ -276,24 +266,35 @@ export class DofPass {
   setCamera(camera: THREE.PerspectiveCamera): void {
     const sensor = this.options.sensorHeight / 1000;
     const focal = sensor / 2 / Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2);
-    for (const p of [this.prep, this.composite]) {
-      p.set('uFocalLength', focal);
-      p.set('uNear', camera.near);
-      p.set('uFar', camera.far);
-    }
+    this.prep.set('uFocalLength', focal);
+    this.prep.set('uNear', camera.near);
+    this.prep.set('uFar', camera.far);
+    this.focalLength = focal;
+  }
+
+  /** Focal length in metres, derived from the render camera's field of view. */
+  get focal(): number {
+    return this.focalLength;
   }
 
   /** The world space band held in critical focus, in metres. */
   setFocusRange(range: number): void {
     this.focusRange = Math.max(0, range);
     this.prep.set('uFocusRange', this.focusRange);
-    this.composite.set('uFocusRange', this.focusRange);
+  }
+
+  get range(): number {
+    return this.focusRange;
   }
 
   /** Momentary aperture override, used by the surge response. */
   setFStop(fStop: number): void {
     this.prep.set('uFStop', fStop);
-    this.composite.set('uFStop', fStop);
+    this.activeFStop = fStop;
+  }
+
+  get fStop(): number {
+    return this.activeFStop;
   }
 
   setSize(width: number, height: number): void {
@@ -303,13 +304,11 @@ export class DofPass {
     const hw = Math.max(1, Math.floor(width / 2));
     const hh = Math.max(1, Math.floor(height / 2));
     this.prepTarget = makeTarget(hw, hh, { type: THREE.HalfFloatType });
-    this.gatherTarget = makeTarget(hw, hh, { type: THREE.HalfFloatType, count: 2 });
-    this.outTarget = makeTarget(width, height, { type: THREE.HalfFloatType });
+    this.gatherTarget = makeTarget(hw, hh, { type: THREE.HalfFloatType, count: 3 });
 
     (this.prep.uniforms.uFullTexel.value as THREE.Vector2).set(1 / width, 1 / height);
     (this.gather.uniforms.uTexel.value as THREE.Vector2).set(1 / hw, 1 / hh);
     this.prep.set('uHeightPixels', height);
-    this.composite.set('uHeightPixels', height);
   }
 
   render(
@@ -318,8 +317,8 @@ export class DofPass {
     color: THREE.Texture,
     depth: THREE.Texture,
     meter: THREE.Texture
-  ): THREE.Texture {
-    if (!this.prepTarget || !this.gatherTarget || !this.outTarget) return color;
+  ): DofTextures | null {
+    if (!this.prepTarget || !this.gatherTarget) return null;
 
     this.prep.set('tColor', color);
     this.prep.set('tDepth', depth);
@@ -329,30 +328,26 @@ export class DofPass {
     this.gather.set('tPrep', this.prepTarget.texture);
     runner.render(renderer, this.gather, this.gatherTarget);
 
-    this.composite.set('tColor', color);
-    this.composite.set('tFar', this.gatherTarget.textures[0]);
-    this.composite.set('tNear', this.gatherTarget.textures[1]);
-    this.composite.set('tDepth', depth);
-    this.composite.set('tMeter', meter);
-    runner.render(renderer, this.composite, this.outTarget);
-
-    return this.outTarget.texture;
+    return {
+      far: this.gatherTarget.textures[0],
+      near: this.gatherTarget.textures[1],
+      composite: this.gatherTarget.textures[2],
+      width: this.gatherTarget.width,
+      height: this.gatherTarget.height,
+    };
   }
 
   /** Frees the targets but keeps the materials, for a tier that turns DOF off. */
   release(): void {
     disposeTarget(this.prepTarget);
     disposeTarget(this.gatherTarget);
-    disposeTarget(this.outTarget);
     this.prepTarget = null;
     this.gatherTarget = null;
-    this.outTarget = null;
   }
 
   dispose(): void {
     this.release();
     this.prep.dispose();
     this.gather.dispose();
-    this.composite.dispose();
   }
 }

@@ -203,7 +203,11 @@ float foilPlate = 1.0;
  * does, while the unfoiled stock stays a dielectric.
  */
 const INJECT_METALNESS = /* glsl */ `
-float foilMetalW = foilPlate * uFoilMetal.y;
+// Only a solid hit of foil becomes metal. Ramping metalness linearly with the
+// plate turns the whole card into a mirror and bleaches the printed art, since
+// a metal has no diffuse albedo. The threshold keeps the frame and the seal
+// metallic while the art window stays ink under a holographic layer.
+float foilMetalW = smoothstep( 0.72, 0.97, foilPlate ) * uFoilMetal.y;
 metalnessFactor = mix( metalnessFactor, uFoilMetal.x, foilMetalW );
 roughnessFactor = mix( roughnessFactor, roughnessFactor * uFoilMetal.z, foilMetalW );
 `;
@@ -233,10 +237,13 @@ float foilSweep = sin( dot( foilUv - 0.5, vec2( 4.1, -2.9 ) ) - uFoilDyn.x * 0.2
 // Film thickness in nanometres. The spatial variation is deliberately under
 // half an interference order: what sweeps the spectrum is the view angle, not
 // the texture. A wide spatial range is what turns a holo into an oil slick.
+// The spatial term is dominated by the smooth diagonal sweep. Texture-driven
+// mottle is kept small on purpose: a premium foil shows broad clean bands, and
+// high frequency thickness noise is exactly what turns one into an oil slick.
 float foilThickness = uFilm.x
-  + uFilm.y * ( foilDet.g - 0.5 ) * 1.5
-  + uFilm.y * 0.30 * ( foilDet.r - 0.5 )
-  + uFilm.y * 0.55 * foilSweep;
+  + uFilm.y * ( foilDet.g - 0.5 ) * 0.42
+  + uFilm.y * 0.16 * ( foilDet.r - 0.5 )
+  + uFilm.y * 1.05 * foilSweep;
 foilThickness = max( foilThickness, 60.0 );
 
 // Embossed grating relief. A stamped hologram is a physical corrugation, so it
@@ -339,14 +346,14 @@ if ( foilStrength > 0.001 ) {
 
   // Grazing angles see far more of the film. This is the tilt reveal.
   float fres = pow( 1.0 - NoV, uStreak.w );
-  float gain = foilStrength * ( 0.22 + 0.78 * fres + uFoilDyn.y * 0.8 ) * ( 1.0 + uFoilDyn.z * 2.5 );
+  float gain = foilStrength * ( 0.3 + 0.42 * fres + uFoilDyn.y * 0.45 ) * ( 1.0 + uFoilDyn.z * 2.5 );
 
-  // The film's reflectance is genuinely only a few tens of percent, so the
-  // printed layer underneath must stay legible through it. Environment goes in
-  // at a quarter weight because the probe's key bar is a hard mirror otherwise.
-  vec3 foil = film * ( envSpec * 0.28 + streak * 0.9 )
-            + prism * film * 0.55
-            + film * sparkle * uFoilParams.w * 2.0;
+  // The clearcoat already reflects the room. What this layer contributes is the
+  // spectral tint of that reflection plus the diffracted lobes, so the mirror
+  // term is deliberately soft and the printed layer stays legible through it.
+  vec3 foil = film * ( min( envSpec, vec3( 6.0 ) ) * 0.2 + streak * 2.4 )
+            + prism * film * 0.4
+            + film * sparkle * uFoilParams.w * 2.5;
 
   // Dead endpoints: the foil has delaminated. What is left flickers and has
   // lost most of its long wavelengths.

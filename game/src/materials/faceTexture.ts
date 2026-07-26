@@ -434,9 +434,9 @@ export function composeFace(card: CardRecord, W = 1024): FacePlates {
 
   // ---- name plate --------------------------------------------------------
   bevelPanel(c, L.name, rs, k, {
-    fillTop: mixHex(ts.primary, rs.stock, 0.72),
-    fillBottom: mixHex(ts.deep, rs.stockLo, 0.5),
-    edge: rgba(rs.frameHi, 0.55),
+    fillTop: mixHex(ts.primary, ts.deep, 0.55),
+    fillBottom: mixHex(ts.deep, rs.stockLo, 0.72),
+    edge: rgba(rs.frameHi, 0.6),
   });
 
   const nameText = card.name.toUpperCase();
@@ -792,9 +792,9 @@ function printPass(
   }
 
   // Global vignette. Every printed sheet is slightly darker at the trim.
-  c.fillStyle = radial(c, W * 0.5, H * 0.44, W * 0.3, W * 0.95, [
+  c.fillStyle = radial(c, W * 0.5, H * 0.44, W * 0.42, W * 1.05, [
     [0, 'rgba(0,0,0,0)'],
-    [1, 'rgba(0,0,0,0.42)'],
+    [1, 'rgba(0,0,0,0.24)'],
   ]);
   c.fillRect(0, 0, W, H);
 }
@@ -822,26 +822,42 @@ function paintFoilMask(
   const paint = (v: number) => `rgba(255,255,255,${clamp01(v).toFixed(3)})`;
 
   if (spread >= 4) {
-    // Full bleed under everything, modulated so it is not a flat sheet.
-    f.fillStyle = paint(0.62);
+    // Full bleed under everything, modulated so it is not a flat sheet. The
+    // field value stays low on purpose: a legendary reads as expensive because
+    // the foil has structure, not because the whole sheet is a mirror.
+    f.fillStyle = paint(0.3);
     roundRect(f, L.pad * 0.36, L.pad * 0.36, W - L.pad * 0.72, H - L.pad * 0.72, 26 * k);
     f.fill();
-    // Ray-strike texture: the classic textured legendary hit.
     f.save();
     roundRect(f, L.pad * 0.36, L.pad * 0.36, W - L.pad * 0.72, H - L.pad * 0.72, 26 * k);
     f.clip();
     f.globalCompositeOperation = 'lighter';
+    // Ray-strike texture: the classic textured legendary hit.
     const cx = W * 0.5;
     const cy = L.art.y + L.art.h * 0.45;
-    for (let i = 0; i < 64; i++) {
-      const a = (i / 64) * Math.PI * 2;
-      const spreadA = 0.028;
+    for (let i = 0; i < 72; i++) {
+      const a = (i / 72) * Math.PI * 2;
+      const spreadA = 0.022;
       f.beginPath();
       f.moveTo(cx, cy);
       f.arc(cx, cy, H, a - spreadA, a + spreadA);
       f.closePath();
-      f.fillStyle = paint(0.18 + 0.16 * Math.sin(i * 2.3));
+      f.fillStyle = paint(0.1 + 0.22 * Math.abs(Math.sin(i * 2.3)));
       f.fill();
+    }
+    // Stamped scale pattern over the whole sheet, so the interference has a
+    // designed structure to run through instead of a flat field.
+    const step = 46 * k;
+    for (let row = 0; row * step < H + step; row++) {
+      for (let col = -1; col * step < W + step; col++) {
+        const px = col * step + (row % 2 ? step * 0.5 : 0);
+        const py = row * step * 0.62;
+        f.beginPath();
+        f.arc(px, py, step * 0.46, Math.PI * 0.1, Math.PI * 0.9);
+        f.strokeStyle = paint(0.16);
+        f.lineWidth = 2.2 * k;
+        f.stroke();
+      }
     }
     f.restore();
   }
@@ -855,7 +871,7 @@ function paintFoilMask(
     f.stroke();
     f.restore();
     chamferRect(f, L.name.x, L.name.y, L.name.w, L.name.h, 14 * k);
-    f.fillStyle = paint(0.85);
+    f.fillStyle = paint(0.66);
     f.fill();
     chamferRect(f, L.price.x, L.price.y, L.price.w, L.price.h, 18 * k);
     f.fillStyle = paint(0.6);
@@ -874,9 +890,9 @@ function paintFoilMask(
       0,
       Math.max(L.art.w, L.art.h) * 0.62,
       [
-        [0, paint(0.95)],
-        [0.6, paint(0.7)],
-        [1, paint(0.32)],
+        [0, paint(0.66)],
+        [0.6, paint(0.52)],
+        [1, paint(0.26)],
       ]
     );
     f.fillRect(L.art.x, L.art.y, L.art.w, L.art.h);
@@ -897,7 +913,7 @@ function paintFoilMask(
         else f.lineTo(px, py);
       }
       f.closePath();
-      f.strokeStyle = paint(0.3);
+      f.strokeStyle = paint(0.22);
       f.lineWidth = 2.4 * k;
       f.stroke();
     }
@@ -959,6 +975,23 @@ function paintFoilMask(
     }
     m.ctx.putImageData(img, 0, 0);
     f.drawImage(m.canvas, 0, 0, W, H);
+    f.restore();
+  }
+
+  if (spread >= 4) {
+    // Protect the read. A full-bleed hit still knocks back where body copy
+    // sits, otherwise the interference competes with the ink and the card stops
+    // being a card. Real full-art printing masks the same way.
+    f.save();
+    f.globalCompositeOperation = 'destination-out';
+    f.fillStyle = 'rgba(0,0,0,0.5)';
+    chamferRect(f, L.stats.x, L.stats.y, L.stats.w, L.stats.h, 18 * k);
+    f.fill();
+    f.fillStyle = 'rgba(0,0,0,0.34)';
+    chamferRect(f, L.price.x, L.price.y, L.price.w, L.price.h, 18 * k);
+    f.fill();
+    f.fillStyle = 'rgba(0,0,0,0.55)';
+    f.fillRect(L.host.x - 8 * k, L.host.y - 6 * k, L.host.w + 16 * k, L.host.h + 12 * k);
     f.restore();
   }
 

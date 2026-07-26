@@ -54,7 +54,10 @@ vec3 yCoCgToRgb( vec3 c ) {
 // Tone weighting during the blend keeps a single very bright sample from
 // dominating the average and flickering. Undone after the mix.
 vec3 toneIn( vec3 c ) { return c / ( 1.0 + maxc( max( c, vec3( 0.0 ) ) ) ); }
-vec3 toneOut( vec3 c ) { return c / max( 1e-4, 1.0 - maxc( min( c, vec3( 0.999 ) ) ) ); }
+// Exact inverse of toneIn. The 0.99 ceiling caps the expansion at a hundred to
+// one: without it a resolved value that lands a hair under one divides by
+// nearly zero and the filter manufactures a firefly out of rounding error.
+vec3 toneOut( vec3 c ) { return c / max( 0.01, 1.0 - maxc( min( c, vec3( 0.99 ) ) ) ); }
 
 // Five tap Catmull-Rom: nine texel support from five bilinear fetches.
 vec3 sampleHistory( vec2 uv ) {
@@ -279,6 +282,14 @@ export class TaaPass {
    * system reads it.
    */
   applyJitter(camera: THREE.PerspectiveCamera): () => void {
+    // three only refreshes matrixWorldInverse inside render(), so at this point
+    // it still holds the previous frame's view transform. Reprojecting against
+    // a one frame stale "current" matrix would make every pixel carry a phantom
+    // velocity equal to the camera's last step, which reads as a permanent
+    // smear. Refresh it here, exactly as the renderer is about to.
+    camera.updateMatrixWorld();
+    camera.matrixWorldInverse.copy(camera.matrixWorld).invert();
+
     // Snapshot the unjittered clip transform first: reprojection must never see
     // the jitter or every pixel would carry a bogus subpixel velocity.
     this.curViewProj.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);

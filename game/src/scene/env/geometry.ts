@@ -112,6 +112,17 @@ export function ceilingDisc(radius: number, segments = 96): THREE.BufferGeometry
   return g;
 }
 
+/** A flat annulus in the XZ plane, facing down. */
+export function ceilingRing(
+  inner: number,
+  outer: number,
+  segments = 96
+): THREE.BufferGeometry {
+  const g = new THREE.RingGeometry(inner, outer, segments, 1);
+  g.rotateX(Math.PI / 2);
+  return g;
+}
+
 /**
  * A profile revolved about the Z axis, for wall mounted circular assemblies.
  * The profile's y becomes depth toward +Z, so front facing surfaces are the

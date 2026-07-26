@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { ACCENT_COLOR } from './layout';
 
 /**
  * Shared reveal-surge state for the environment.
@@ -30,8 +31,8 @@ const state: EnvSurge = {
   target: 0,
   value: 0,
   velocity: 0,
-  color: new THREE.Color(1, 0.72, 0.38),
-  restColor: new THREE.Color(1, 0.72, 0.38),
+  color: ACCENT_COLOR.clone(),
+  restColor: ACCENT_COLOR.clone(),
 };
 
 export function envSurge(): EnvSurge {

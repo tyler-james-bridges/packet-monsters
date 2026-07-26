@@ -50,43 +50,137 @@ function hexRgb(hex: string): [number, number, number] {
   return [((n >> 16) & 255) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255];
 }
 
-/** Creature outline as a closed polar contour, mirror-symmetric about the vertical. */
-function creatureContour(rng: Rng, samples: number): { t: number; r: number }[] {
-  const harmonics: { k: number; a: number }[] = [];
-  const kCount = irange(rng, 3, 5);
-  for (let i = 0; i < kCount; i++) {
-    harmonics.push({ k: irange(rng, 1, 6), a: range(rng, 0.05, 0.22) / (1 + i * 0.4) });
-  }
-  const lobes: { t: number; a: number; s: number }[] = [];
-  const lobeCount = irange(rng, 2, 4);
-  for (let i = 0; i < lobeCount; i++) {
-    lobes.push({
-      t: range(rng, 0.15, Math.PI * 0.95),
-      a: range(rng, 0.25, 0.85),
-      s: range(rng, 0.1, 0.34),
-    });
-  }
-  // Vertical stretch: tall predatory shapes versus squat heavy ones.
-  const stretch = range(rng, 0.78, 1.28);
+/**
+ * Creature outline as a closed polar contour, mirror-symmetric about the
+ * vertical.
+ *
+ * The radius is not free-form noise: it interpolates a fixed anatomical
+ * skeleton, head at the top, a neck pinch, shoulders, a waist, then a wide
+ * planted base. Only the amounts vary per card. Pure harmonic noise gives blobs
+ * with no read; a skeleton with jittered proportions gives something the eye
+ * parses as a body every time.
+ */
+type Archetype = 'titan' | 'floater' | 'serpent' | 'swarm';
 
-  const half: { t: number; r: number }[] = [];
-  for (let i = 0; i <= samples; i++) {
-    const t = (i / samples) * Math.PI; // 0 = straight up, PI = straight down
-    let r = 1;
-    for (const h of harmonics) r += h.a * Math.cos(h.k * t);
-    for (const l of lobes) {
-      const d = (t - l.t) / l.s;
-      r += l.a * Math.exp(-0.5 * d * d);
+interface Creature {
+  pts: { t: number; r: number }[];
+  archetype: Archetype;
+  /** True when the shape has a base that stands on the ground plane. */
+  grounded: boolean;
+  /** Half-extent multipliers, so a serpent is narrow and a titan is broad. */
+  rx: number;
+  ry: number;
+}
+
+function creatureContour(rng: Rng, samples: number): Creature {
+  const j = (v: number, amt: number) => v * (1 + (rng() * 2 - 1) * amt);
+  const archetype = pick<Archetype>(rng, ['titan', 'titan', 'floater', 'serpent', 'swarm']);
+  const bulk = range(rng, 0.7, 1.3);
+
+  let skeleton: [number, number][];
+  let grounded = true;
+  let rx = 1;
+  let ry = 1;
+  const spikes: { t: number; a: number; s: number }[] = [];
+
+  if (archetype === 'titan') {
+    const topHeavy = range(rng, -0.35, 0.5);
+    const neck = range(rng, 0.22, 0.6);
+    skeleton = [
+      [0.0, j(0.4 + topHeavy * 0.4, 0.3)],
+      [0.2, j(0.46 + topHeavy * 0.5, 0.28)],
+      [0.4, j(neck * bulk, 0.3)],
+      [0.66, j((0.86 + topHeavy * 0.5) * bulk, 0.28)],
+      [0.95, j((0.7 + topHeavy * 0.3) * bulk, 0.34)],
+      [1.3, j((0.6 - topHeavy * 0.15) * bulk, 0.36)],
+      [1.75, j((0.84 - topHeavy * 0.3) * bulk, 0.3)],
+      [2.25, j((1.0 - topHeavy * 0.35) * bulk, 0.22)],
+      [2.75, j((0.86 - topHeavy * 0.2) * bulk, 0.24)],
+      [Math.PI, j(0.7 * bulk, 0.2)],
+    ];
+    rx = range(rng, 0.9, 1.15);
+    ry = range(rng, 0.9, 1.2);
+    for (let i = 0, n = irange(rng, 0, 3); i < n; i++) {
+      spikes.push({ t: range(rng, 0.08, 0.42), a: range(rng, 0.3, 1.0), s: range(rng, 0.03, 0.09) });
     }
-    // Ground the shape: the bottom of the silhouette flattens as if it stands.
-    r *= mix(1, 0.72, smoothstep(0.6, 1.0, t / Math.PI));
-    half.push({ t, r: Math.max(0.18, r) });
+    for (let i = 0, n = irange(rng, 0, 2); i < n; i++) {
+      spikes.push({ t: range(rng, 0.55, 1.2), a: range(rng, 0.25, 0.85), s: range(rng, 0.05, 0.18) });
+    }
+  } else if (archetype === 'floater') {
+    // A hovering mass: widest at the equator, tapering to a point below.
+    grounded = false;
+    const eq = range(rng, 1.15, 1.75);
+    skeleton = [
+      [0.0, j(0.34, 0.4)],
+      [0.35, j(0.62 * bulk, 0.3)],
+      [eq * 0.6, j(0.86 * bulk, 0.25)],
+      [eq, j(1.05 * bulk, 0.18)],
+      [eq + 0.45, j(0.72 * bulk, 0.3)],
+      [2.55, j(0.34 * bulk, 0.4)],
+      [Math.PI, j(0.12, 0.5)],
+    ];
+    rx = range(rng, 1.0, 1.35);
+    ry = range(rng, 0.78, 1.05);
+    for (let i = 0, n = irange(rng, 3, 8); i < n; i++) {
+      spikes.push({ t: range(rng, 0.2, 2.6), a: range(rng, 0.2, 0.7), s: range(rng, 0.03, 0.1) });
+    }
+  } else if (archetype === 'serpent') {
+    // Tall and narrow, with two or three bulges along its length.
+    skeleton = [
+      [0.0, j(0.3, 0.35)],
+      [0.22, j(0.44 * bulk, 0.3)],
+      [0.55, j(0.26 * bulk, 0.4)],
+      [0.95, j(0.5 * bulk, 0.3)],
+      [1.45, j(0.3 * bulk, 0.4)],
+      [1.95, j(0.56 * bulk, 0.3)],
+      [2.5, j(0.42 * bulk, 0.35)],
+      [Math.PI, j(0.5 * bulk, 0.3)],
+    ];
+    rx = range(rng, 0.5, 0.75);
+    ry = range(rng, 1.15, 1.5);
+    for (let i = 0, n = irange(rng, 2, 5); i < n; i++) {
+      spikes.push({ t: range(rng, 0.05, 1.4), a: range(rng, 0.25, 0.8), s: range(rng, 0.03, 0.08) });
+    }
+  } else {
+    // Jagged, unstable, many limbs. The shape a swarm resolves into.
+    grounded = rng() < 0.4;
+    skeleton = [
+      [0.0, j(0.5 * bulk, 0.4)],
+      [0.5, j(0.7 * bulk, 0.4)],
+      [1.0, j(0.55 * bulk, 0.4)],
+      [1.6, j(0.8 * bulk, 0.35)],
+      [2.2, j(0.6 * bulk, 0.4)],
+      [2.7, j(0.75 * bulk, 0.35)],
+      [Math.PI, j(0.55 * bulk, 0.35)],
+    ];
+    rx = range(rng, 0.85, 1.25);
+    ry = range(rng, 0.85, 1.25);
+    for (let i = 0, n = irange(rng, 6, 12); i < n; i++) {
+      spikes.push({ t: range(rng, 0, Math.PI), a: range(rng, 0.2, 0.75), s: range(rng, 0.02, 0.07) });
+    }
   }
 
-  const full: { t: number; r: number }[] = [];
-  for (const p of half) full.push({ t: p.t, r: p.r * (1 / stretch) });
-  for (let i = half.length - 2; i > 0; i--) full.push({ t: -half[i].t, r: half[i].r * (1 / stretch) });
-  return full.map((p) => ({ t: p.t, r: p.r }));
+  const ripple = archetype === 'swarm' ? range(rng, 0.04, 0.12) : range(rng, 0.01, 0.07);
+  const rippleK = irange(rng, 4, archetype === 'swarm' ? 22 : 14);
+
+  function radiusAt(t: number): number {
+    let i = 0;
+    while (i < skeleton.length - 2 && skeleton[i + 1][0] < t) i++;
+    const [t0, r0] = skeleton[i];
+    const [t1, r1] = skeleton[i + 1];
+    let r = mix(r0, r1, smoothstep(t0, t1, t));
+    for (const s of spikes) {
+      const d = (t - s.t) / s.s;
+      r += s.a * Math.exp(-0.5 * d * d);
+    }
+    r += ripple * Math.cos(rippleK * t);
+    return Math.max(0.1, r);
+  }
+
+  const pts: { t: number; r: number }[] = [];
+  for (let i = 0; i <= samples; i++) pts.push({ t: (i / samples) * Math.PI, r: radiusAt((i / samples) * Math.PI) });
+  for (let i = samples - 1; i > 0; i--) pts.push({ t: -pts[i].t, r: pts[i].r });
+  return { pts, archetype, grounded, rx, ry };
 }
 
 function contourPath(ctx: Ctx2D, pts: { t: number; r: number }[], cx: number, cy: number, rx: number, ry: number): void {
@@ -254,20 +348,22 @@ export function drawArtwork(
     return [mix(dr, mix(sr, pr, t), 0.9), mix(dg, mix(sg, pg, t), 0.9), mix(db, mix(sb, pb, t), 0.9), a];
   });
   ctx.globalCompositeOperation = 'lighter';
-  ctx.globalAlpha = 0.85;
-  ctx.drawImage(field.canvas, x, y, w, h);
   ctx.globalAlpha = 1;
+  ctx.drawImage(field.canvas, x, y, w, h);
   ctx.globalCompositeOperation = 'source-over';
 
   // ---- 3. Key glow behind the subject ------------------------------------
-  const cx = x + w * mix(0.42, 0.58, rng());
+  // The subject is backlit. This glow is the brightest thing in the window and
+  // it is what gives the silhouette something to read against.
+  const cx = x + w * mix(0.44, 0.56, rng());
   const cy = y + h * horizon;
-  const glowR = w * range(rng, 0.42, 0.6);
+  const glowR = w * range(rng, 0.5, 0.7);
   ctx.globalCompositeOperation = 'lighter';
   ctx.fillStyle = radial(ctx, cx, cy, 0, glowR, [
-    [0, rgba(ts.accent, 0.85)],
-    [0.22, rgba(ts.primary, 0.5)],
-    [0.6, rgba(ts.secondary, 0.14)],
+    [0, '#ffffff'],
+    [0.1, rgba(ts.accent, 0.95)],
+    [0.3, rgba(ts.primary, 0.72)],
+    [0.62, rgba(ts.secondary, 0.26)],
     [1, rgba(ts.secondary, 0)],
   ]);
   ctx.fillRect(x, y, w, h);
@@ -326,7 +422,10 @@ export function drawArtwork(
   ctx.globalCompositeOperation = 'source-over';
 
   // ---- 5. Depth layers: far terrain reading as scale ---------------------
-  for (let layer = 0; layer < 3; layer++) {
+  // Not every endpoint lives on a surface. A quarter of them are drawn in open
+  // space, which keeps the set from reading as one repeated matte painting.
+  const terrainLayers = rng() < 0.74 ? 3 : 0;
+  for (let layer = 0; layer < terrainLayers; layer++) {
     const base = y + h * (horizon + 0.02 + layer * 0.075);
     const amp = h * (0.16 - layer * 0.04);
     const freq = 1.4 + layer * 1.7;
@@ -340,38 +439,67 @@ export function drawArtwork(
     }
     ctx.lineTo(x + w, y + h);
     ctx.closePath();
-    const shade = mixHex(ts.deep, '#000000', 0.15 + layer * 0.22);
+    // Aerial perspective: the far ridge sits closest to the sky value, the near
+    // one goes almost black. That gradient is the whole illusion of depth.
+    const shade = mixHex(ts.deep, '#000000', 0.05 + layer * 0.3);
     ctx.fillStyle = linear(ctx, x, base - amp, x, y + h, [
-      [0, mixHex(shade, ts.secondary, 0.22 - layer * 0.06)],
+      [0, mixHex(shade, ts.primary, 0.42 - layer * 0.14)],
       [1, shade],
     ]);
     ctx.fill();
+    // Rim of light along the ridge line.
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.strokeStyle = rgba(ts.primary, 0.3 - layer * 0.08);
+    ctx.lineWidth = w * 0.0022;
+    ctx.stroke();
+    ctx.restore();
   }
 
   // ---- 6. The subject ----------------------------------------------------
-  const pts = creatureContour(rng, 96);
-  const bodyR = w * range(rng, 0.2, 0.27);
-  const bodyH = bodyR * range(rng, 1.15, 1.6);
-  const byc = y + h * (horizon + 0.02) - bodyH * 0.62;
+  const creature = creatureContour(rng, 120);
+  const pts = creature.pts;
+  // Framing: some cards are a portrait crop, some sit small in a landscape.
+  const framing = range(rng, 0.72, 1.3);
+  const bodyR = w * range(rng, 0.22, 0.28) * framing * creature.rx;
+  const bodyH = w * range(rng, 0.3, 0.4) * framing * creature.ry;
+  const byc = creature.grounded
+    ? y + h * (horizon + 0.02) - bodyH * 0.46
+    : y + h * range(rng, 0.36, 0.54);
 
-  // Cast shadow onto the terrain, keeps the subject planted.
-  ctx.save();
-  ctx.globalCompositeOperation = 'multiply';
-  ctx.fillStyle = radial(ctx, cx, y + h * (horizon + 0.04), 0, bodyR * 1.5, [
-    [0, 'rgba(0,0,0,0.85)'],
-    [1, 'rgba(0,0,0,0)'],
-  ]);
-  ctx.beginPath();
-  ctx.ellipse(cx, y + h * (horizon + 0.04), bodyR * 1.5, bodyR * 0.34, 0, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.restore();
+  if (creature.grounded) {
+    // Cast shadow onto the terrain, keeps the subject planted.
+    ctx.save();
+    ctx.globalCompositeOperation = 'multiply';
+    ctx.fillStyle = radial(ctx, cx, y + h * (horizon + 0.04), 0, bodyR * 1.5, [
+      [0, 'rgba(0,0,0,0.85)'],
+      [1, 'rgba(0,0,0,0)'],
+    ]);
+    ctx.beginPath();
+    ctx.ellipse(cx, y + h * (horizon + 0.04), bodyR * 1.5, bodyR * 0.34, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  } else {
+    // A hovering entity gets a containment ring instead of a shadow.
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    for (let i = 0; i < 2; i++) {
+      ctx.beginPath();
+      ctx.ellipse(cx, byc + bodyH * (0.9 + i * 0.16), bodyR * (1.5 - i * 0.3), bodyR * 0.3, 0, 0, Math.PI * 2);
+      ctx.strokeStyle = rgba(ts.accent, 0.3 - i * 0.12);
+      ctx.lineWidth = w * 0.004;
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
 
   // Body: near-black against the glow, with a chromatic rim.
   contourPath(ctx, pts, cx, byc, bodyR, bodyH);
-  ctx.fillStyle = linear(ctx, cx, byc - bodyH, cx, byc + bodyH, [
-    [0, mixHex(ts.deep, '#000000', 0.55)],
-    [0.62, mixHex(ts.deep, '#000000', 0.78)],
-    [1, mixHex(ts.deep, ts.primary, 0.28)],
+  ctx.fillStyle = linear(ctx, cx - bodyR, byc - bodyH, cx + bodyR, byc + bodyH, [
+    [0, mixHex(ts.deep, ts.secondary, 0.3)],
+    [0.35, mixHex(ts.deep, '#000000', 0.5)],
+    [0.75, mixHex(ts.deep, '#000000', 0.82)],
+    [1, mixHex(ts.deep, '#000000', 0.62)],
   ]);
   ctx.fill();
 
@@ -412,37 +540,59 @@ export function drawArtwork(
   }
   ctx.restore();
 
-  // Rim light: two passes, warm from the key and cool from behind.
+  // Rim light: a broad bloom outside the silhouette and a hot hairline on it.
   ctx.save();
-  contourPath(ctx, pts, cx, byc, bodyR, bodyH);
-  ctx.strokeStyle = rgba(ts.accent, 0.9);
-  ctx.lineWidth = w * 0.006;
-  ctx.stroke();
+  ctx.globalCompositeOperation = 'lighter';
+  for (let i = 3; i >= 1; i--) {
+    contourPath(ctx, pts, cx, byc, bodyR, bodyH);
+    ctx.strokeStyle = rgba(ts.primary, 0.16 / i);
+    ctx.lineWidth = w * 0.014 * i;
+    ctx.stroke();
+  }
   ctx.restore();
   ctx.save();
-  ctx.translate(0, -w * 0.006);
+  contourPath(ctx, pts, cx, byc, bodyR, bodyH);
+  ctx.strokeStyle = rgba(ts.accent, 0.95);
+  ctx.lineWidth = w * 0.0055;
+  ctx.stroke();
+  ctx.restore();
+  // Key side hairline, offset up and left so the form reads as lit from above.
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(x, y, w * 0.55, h);
+  ctx.clip();
+  ctx.translate(-w * 0.006, -w * 0.006);
   contourPath(ctx, pts, cx, byc, bodyR, bodyH);
   ctx.globalCompositeOperation = 'lighter';
-  ctx.strokeStyle = rgba(ts.primary, 0.55);
-  ctx.lineWidth = w * 0.011;
+  ctx.strokeStyle = rgba('#ffffff', 0.55);
+  ctx.lineWidth = w * 0.004;
   ctx.stroke();
   ctx.restore();
 
-  // Eyes.
+  // Eyes, placed inside the head region of the skeleton rather than anywhere on
+  // the mass. This is what makes the silhouette read as facing the viewer.
   const eyePairs = irange(rng, 1, 3);
   ctx.globalCompositeOperation = 'lighter';
   for (let i = 0; i < eyePairs; i++) {
-    const ex = bodyR * range(rng, 0.16, 0.5);
-    const ey = byc - bodyH * range(rng, 0.1, 0.62);
-    const er = w * range(rng, 0.007, 0.014);
+    const et = range(rng, 0.14, 0.42) + i * 0.1;
+    const headR = pts.find((p) => p.t >= et)?.r ?? 0.5;
+    const frac = range(rng, 0.42, 0.68);
+    const ex = Math.sin(et) * headR * frac * bodyR + bodyR * 0.06;
+    const ey = byc - Math.cos(et) * headR * frac * bodyH;
+    const er = w * range(rng, 0.011, 0.019);
     for (const sgn of [-1, 1]) {
       ctx.beginPath();
-      ctx.ellipse(cx + sgn * ex, ey, er * 1.5, er, 0, 0, Math.PI * 2);
-      ctx.fillStyle = radial(ctx, cx + sgn * ex, ey, 0, er * 3.4, [
+      ctx.ellipse(cx + sgn * ex, ey, er * 4.5, er * 4.5, 0, 0, Math.PI * 2);
+      ctx.fillStyle = radial(ctx, cx + sgn * ex, ey, 0, er * 4.5, [
         [0, '#ffffff'],
-        [0.28, rgba(ts.accent, 0.95)],
+        [0.16, rgba(ts.accent, 0.9)],
+        [0.42, rgba(ts.primary, 0.35)],
         [1, rgba(ts.primary, 0)],
       ]);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.ellipse(cx + sgn * ex, ey, er * 1.15, er * 0.75, 0, 0, Math.PI * 2);
+      ctx.fillStyle = '#ffffff';
       ctx.fill();
     }
   }
@@ -578,10 +728,11 @@ export function drawArtwork(
 
   // ---- 9. Ghost decay ----------------------------------------------------
   if (ghost) {
-    // Bleach: dead endpoints lose their ink.
+    // Bleach: dead endpoints lose their ink, but not all of it. A fully grey
+    // card reads as a mistake; a partly bleached one reads as time passing.
     ctx.globalCompositeOperation = 'saturation';
     ctx.fillStyle = '#808080';
-    ctx.globalAlpha = 0.55;
+    ctx.globalAlpha = 0.34;
     ctx.fillRect(x, y, w, h);
     ctx.globalAlpha = 1;
     ctx.globalCompositeOperation = 'source-over';
@@ -627,12 +778,19 @@ export function drawArtwork(
       ctx.globalCompositeOperation = 'source-over';
     }
 
-    // A cold spectral wash that keeps it beautiful rather than merely dirty.
+    // A cold spectral wash that keeps it beautiful rather than merely dirty,
+    // plus a residual aura around where the subject still stands.
     ctx.globalCompositeOperation = 'lighter';
     ctx.fillStyle = linear(ctx, x, y, x, y + h, [
-      [0, 'rgba(120,255,220,0.10)'],
-      [0.6, 'rgba(60,160,150,0.03)'],
-      [1, 'rgba(20,60,70,0.10)'],
+      [0, 'rgba(120,255,220,0.16)'],
+      [0.55, 'rgba(70,190,180,0.07)'],
+      [1, 'rgba(30,90,100,0.16)'],
+    ]);
+    ctx.fillRect(x, y, w, h);
+    ctx.fillStyle = radial(ctx, cx, byc, 0, bodyR * 2.4, [
+      [0, 'rgba(150,255,230,0.22)'],
+      [0.45, 'rgba(90,220,200,0.09)'],
+      [1, 'rgba(60,180,170,0)'],
     ]);
     ctx.fillRect(x, y, w, h);
     ctx.globalCompositeOperation = 'source-over';
@@ -651,9 +809,9 @@ export function drawArtwork(
   ctx.globalCompositeOperation = 'source-over';
 
   // Window vignette: the art sits in a recess, so it darkens at the frame.
-  ctx.fillStyle = radial(ctx, x + w * 0.5, y + h * 0.5, Math.min(w, h) * 0.28, Math.max(w, h) * 0.72, [
+  ctx.fillStyle = radial(ctx, x + w * 0.5, y + h * 0.5, Math.min(w, h) * 0.42, Math.max(w, h) * 0.78, [
     [0, 'rgba(0,0,0,0)'],
-    [1, `rgba(0,0,0,${(0.42 + rs.foil * 0.14).toFixed(3)})`],
+    [1, `rgba(0,0,0,${(0.24 + rs.foil * 0.1).toFixed(3)})`],
   ]);
   ctx.fillRect(x, y, w, h);
 

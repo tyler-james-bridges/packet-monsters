@@ -65,6 +65,8 @@ uniform float uAttack;
 uniform float uRelease;
 uniform float uFocusRate;
 uniform float uManualFocus;  // > 0 overrides the metered distance
+uniform float uFallbackFocus;
+uniform float uFocusMax;
 uniform float uExposureBase;
 uniform float uExposureComp;
 uniform float uAutoExposure;
@@ -95,25 +97,41 @@ void main() {
   }
   float curEv = sum / max( wsum, 1e-5 );
 
-  // Focus: nine tap cluster at the frame centre, biased toward the nearest
-  // surface because the subject is what stands in front, not behind.
-  float dsum = 0.0;
-  float dmin = 1e9;
-  for ( int y = -1; y <= 1; y++ ) {
-    for ( int x = -1; x <= 1; x++ ) {
-      vec2 uv = vec2( 0.5, 0.5 ) + vec2( float( x ), float( y ) ) * uTexel * 24.0;
-      float z = linearDepth( texture( tDepth, uv ).x, uNear, uFar );
-      dsum += z;
-      dmin = min( dmin, z );
-    }
-  }
-  float curFocus = mix( dsum / 9.0, dmin, 0.65 );
-  if ( uManualFocus > 0.0 ) curFocus = uManualFocus;
-  curFocus = clamp( curFocus, uNear * 4.0, uFar * 0.5 );
-
   vec4 prev = texture( tPrev, vec2( 0.5 ) );
   float prevEv = prev.r;
   float prevFocus = prev.g;
+
+  // Focus: nine tap cluster at the frame centre, biased toward the nearest
+  // surface because the subject is what stands in front, not behind.
+  //
+  // Taps that hit the far plane are discarded. An empty centre of frame reads
+  // as depth one, which would place the focal plane at the far clip and throw
+  // the entire set into the near field: the whole image would go soft the
+  // instant nothing was standing on the altar. With no valid tap at all the
+  // meter holds the last good distance rather than inventing one.
+  float dsum = 0.0;
+  float dmin = 1e9;
+  float dcount = 0.0;
+  for ( int y = -1; y <= 1; y++ ) {
+    for ( int x = -1; x <= 1; x++ ) {
+      vec2 uv = vec2( 0.5, 0.5 ) + vec2( float( x ), float( y ) ) * uTexel * 24.0;
+      float raw = texture( tDepth, uv ).x;
+      if ( raw >= 0.999999 ) continue;
+      float z = linearDepth( raw, uNear, uFar );
+      dsum += z;
+      dmin = min( dmin, z );
+      dcount += 1.0;
+    }
+  }
+
+  float curFocus;
+  if ( dcount > 0.5 ) {
+    curFocus = mix( dsum / dcount, dmin, 0.65 );
+  } else {
+    curFocus = prevFocus > 0.0 ? prevFocus : uFallbackFocus;
+  }
+  if ( uManualFocus > 0.0 ) curFocus = uManualFocus;
+  curFocus = clamp( curFocus, max( uNear * 4.0, 0.2 ), uFocusMax );
 
   float ev = curEv;
   float focus = curFocus;
@@ -169,6 +187,9 @@ export class MeterPass {
         uRelease: { value: options.release },
         uFocusRate: { value: options.focusRate },
         uManualFocus: { value: -1 },
+        // Where the lens parks itself when nothing is in the centre of frame.
+        uFallbackFocus: { value: 4.4 },
+        uFocusMax: { value: 40 },
         uExposureBase: { value: 1 },
         uExposureComp: { value: 0 },
         uAutoExposure: { value: 0.6 },
@@ -218,6 +239,10 @@ export class MeterPass {
   setCamera(near: number, far: number): void {
     this.resolve.set('uNear', near);
     this.resolve.set('uFar', far);
+    // Beyond a few tens of metres a normal lens is at its hyperfocal distance
+    // and the far field stops changing, so clamping here costs nothing and
+    // stops a stray far plane read from parking focus at infinity.
+    this.resolve.set('uFocusMax', Math.min(40, far * 0.5));
   }
 
   /** Negative distance restores automatic focus. */

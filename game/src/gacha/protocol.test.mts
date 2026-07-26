@@ -27,10 +27,10 @@ import {
   rarityOdds,
   selectIndex,
   weightOf,
-} from './protocol.ts';
-import { CARDS } from '../data/cards.ts';
-import { RARITY_NAMES } from '../core/types.ts';
-import { splitmix32 } from '../core/rng.ts';
+} from './protocol';
+import { CARDS } from '../data/cards';
+import { RARITY_NAMES } from '../core/types';
+import { splitmix32 } from '../core/rng';
 
 let passed = 0;
 let failed = 0;
@@ -170,6 +170,9 @@ section('3. Fee ceiling and rounding direction');
   ok(quote(acc, 1n).fee >= 1n, 'a one basis point fee still rounds up to at least one wei');
 
   // Rounding always favours the vault: never round the buyer a wei cheaper.
+  // Compared entirely in bigint. `fee * BPS >= base * feeBps` is exactly the
+  // statement "the charged fee is at or above the real fee" with no division
+  // and therefore no float slack.
   const rng = splitmix32(7);
   let cheaper = 0;
   for (let t = 0; t < 2000; t++) {
@@ -178,10 +181,10 @@ section('3. Fee ceiling and rounding direction');
     for (let i = 0; i < n; i++) backings.push(clampBacking(BigInt(Math.floor(rng() * 4e20)) + 1n));
     const a = accumulate(backings);
     const q = quote(a);
-    const trueEv = exactExpectedPayout(backings);
-    const trueFee = (Number(q.base) * Number(PROTOCOL.FEE_BPS)) / 10000;
-    if (q.base < trueEv) cheaper++;
-    if (Number(q.fee) < trueFee - 1) cheaper++;
+    if (q.base < exactExpectedPayout(backings)) cheaper++;
+    if (q.fee * BPS < q.base * PROTOCOL.FEE_BPS) cheaper++;
+    // and the base must dominate n * WEIGHT_NUM / sumWeight exactly
+    if (q.base * a.sumWeight < BigInt(a.count) * WEIGHT_NUM) cheaper++;
   }
   ok(cheaper === 0, 'no rounding path ever prices below the true value', `${cheaper} cases`);
   report('fee ceiling and rounding');
@@ -376,5 +379,7 @@ console.log(`\n${'='.repeat(62)}`);
 console.log(`RESULT: ${passed} passed, ${failed} failed`);
 if (failed > 0) {
   for (const f of failures) console.log(`  - ${f}`);
-  process.exit(1);
+  // Throwing (rather than process.exit) keeps this file free of Node type
+  // dependencies while still failing the run with a non-zero exit code.
+  throw new Error(`${failed} protocol invariant(s) failed:\n  - ${failures.join('\n  - ')}`);
 }

@@ -125,7 +125,7 @@ export class PhysicsWorld {
       const b = e.body;
       if (!b.active || b.sleeping) continue;
       b.force.addScaledVector(this.gravity, b.mass);
-      if (e.aero) applyPlateAero(b, e.aero);
+      if (e.aero) applyPlateAero(b, e.aero, h);
       b.integrate(h);
     }
     for (const e of this.bodies) {

@@ -27,90 +27,103 @@ import type { RigidBody } from './rigidbody';
  * The card's face normal is local +Z. Local X is width, local Y is height.
  */
 export interface AeroParams {
-  /** Effective air density. Scales the whole thing; tune this first. */
+  /** Air density, kg/m^3. 1.2 is real air; raising it exaggerates the flutter. */
   density: number;
-  /** Normal pressure coefficient. Around 1.2 for a flat plate broadside. */
+  /** Normal pressure coefficient. Around 1.28 for a flat plate broadside. */
   normalDrag: number;
   /** In plane skin drag coefficient. Much smaller than normalDrag. */
   edgeDrag: number;
   /** Centre of pressure offset as a fraction of the half chord, edge on. */
   copShift: number;
-  /** Quadratic rotational damping. */
+  /** Angular damping coefficient, quadratic in rate. Applied analytically. */
   rotationalDrag: number;
   /** Magnus-like spin/velocity coupling. */
   liftCoupling: number;
 }
 
 export const CARD_AERO: AeroParams = {
-  density: 1.9,
+  density: 0.6,
   normalDrag: 1.28,
-  edgeDrag: 0.06,
-  copShift: 0.42,
-  rotationalDrag: 0.016,
-  liftCoupling: 0.035,
+  edgeDrag: 0.08,
+  copShift: 0.46,
+  rotationalDrag: 0.34,
+  liftCoupling: 0.02,
 };
 
 const _n = new THREE.Vector3();
 const _vt = new THREE.Vector3();
-const _f = new THREE.Vector3();
 const _cop = new THREE.Vector3();
 const _t = new THREE.Vector3();
+const _fn = new THREE.Vector3();
 const _lift = new THREE.Vector3();
 
 /**
  * Accumulate aerodynamic force and torque onto a thin plate body for this step.
- * Call before `integrate`.
+ * Call before `integrate`. `h` is the substep about to be taken.
+ *
+ * Quadratic drag on a body with this much area and this little mass is stiff:
+ * an explicit `F = -c|v|v` step can easily overshoot and reverse the velocity,
+ * and then it diverges. So both drag terms are solved analytically instead. The
+ * scalar equation `dv/dt = -c|v|v` has the exact solution `v/(1 + c|v0|t)`, and
+ * the force reported back to the solver is the one that produces exactly that
+ * velocity change over the step. The result is unconditionally stable at any dt
+ * and still gives the torque the centre of pressure needs.
  */
-export function applyPlateAero(body: RigidBody, p: AeroParams): void {
-  if (!body.active || body.sleeping) return;
+export function applyPlateAero(body: RigidBody, p: AeroParams, h: number): void {
+  if (!body.active || body.sleeping || h <= 0) return;
 
   const w = body.size.x;
-  const h = body.size.y;
-  const area = w * h;
-  const halfChord = 0.5 * Math.sqrt(w * h); // geometric mean: the card is not square
+  const ht = body.size.y;
+  const area = w * ht;
+  const halfChord = 0.5 * Math.sqrt(w * ht); // geometric mean: the card is not square
+  const m = body.mass;
 
   body.axis(2, _n); // face normal, world space
 
   const speed = body.velocity.length();
   if (speed > 1e-4) {
     const vn = body.velocity.dot(_n);
-    const q = 0.5 * p.density * area;
 
     // 1. Normal pressure, opposing the normal component of the flow.
-    const fn = -q * p.normalDrag * Math.abs(vn) * vn;
-    _f.copy(_n).multiplyScalar(fn);
+    const cn = (0.5 * p.density * p.normalDrag * area) / m;
+    const vnNext = vn / (1 + cn * Math.abs(vn) * h);
+    const fn = (m * (vnNext - vn)) / h;
+    _fn.copy(_n).multiplyScalar(fn);
+    body.force.add(_fn);
 
     // In plane flow direction. The leading edge is the edge heading into it.
     _vt.copy(body.velocity).addScaledVector(_n, -vn);
     const vtLen = _vt.length();
 
-    // 2. Centre of pressure. Broadside (sinAlpha = 1) it sits at the centroid;
-    // edge on it runs out toward the leading edge and destabilises the pitch.
     if (vtLen > 1e-5) {
+      // 2. Centre of pressure. Broadside (sinAlpha = 1) it sits at the centroid;
+      // edge on it runs out toward the leading edge, ahead of the centre of mass,
+      // which is what makes the card statically unstable in pitch. This is the
+      // flutter.
       const sinAlpha = Math.min(1, Math.abs(vn) / speed);
       const offset = halfChord * p.copShift * (1 - sinAlpha);
       _cop.copy(_vt).multiplyScalar(offset / vtLen);
-      body.torque.add(_t.copy(_cop).cross(_f));
+      body.torque.add(_t.copy(_cop).cross(_fn));
 
-      // In plane skin drag over the thin edge cross section.
-      const edgeArea = area * 0.08 + w * body.size.z;
-      const ft = -0.5 * p.density * p.edgeDrag * edgeArea * vtLen;
-      _f.addScaledVector(_vt, ft);
+      // In plane skin drag over the thin edge cross section, same analytic form.
+      const edgeArea = area * 0.1 + w * body.size.z;
+      const ct = (0.5 * p.density * p.edgeDrag * edgeArea) / m;
+      const vtNext = vtLen / (1 + ct * vtLen * h);
+      body.force.addScaledVector(_vt, (m * (vtNext - vtLen)) / h / vtLen);
     }
 
-    body.force.add(_f);
-
-    // 4. Magnus-like coupling. Spin across the flow pushes the card sideways.
+    // 3. Magnus-like coupling. Spin across the flow pushes the card sideways and
+    // stops a tumble from staying in one plane.
     if (p.liftCoupling > 0) {
       _lift.copy(body.angularVelocity).cross(body.velocity);
       body.force.addScaledVector(_lift, p.liftCoupling * p.density * area);
     }
   }
 
-  // 3. Quadratic rotational damping, scaled by the plan area and the lever arm.
+  // 4. Rotational damping, quadratic in rate, again solved analytically so a fast
+  // ejection spin can never be turned inside out by one large step.
   const wl = body.angularVelocity.length();
   if (wl > 1e-5) {
-    const k = p.rotationalDrag * p.density * area * halfChord * halfChord * wl;
-    body.torque.addScaledVector(body.angularVelocity, -k);
+    body.angularVelocity.multiplyScalar(1 / (1 + p.rotationalDrag * wl * h));
   }
 }

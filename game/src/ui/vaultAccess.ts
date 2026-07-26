@@ -91,9 +91,13 @@ export interface VaultEconomics {
   feeShare: number;
   odds: number[];
   rarities: RarityStat[];
-  /** Highest single-position weight, i.e. vault concentration. */
-  topWeight: number;
-  topPosition: VaultPosition | null;
+  /**
+   * The single hardest position to draw. Under reciprocal weighting that is the
+   * most heavily backed one, which is the whole point of the design: scarcity
+   * and value agree instead of inverting.
+   */
+  rarestWeight: number;
+  rarestPosition: VaultPosition | null;
 }
 
 export function readEconomics(machine: GachaMachine): VaultEconomics {
@@ -125,9 +129,9 @@ export function readEconomics(machine: GachaMachine): VaultEconomics {
     bucket.backing += backingWei(p);
   }
 
-  let topPosition: VaultPosition | null = null;
+  let rarestPosition: VaultPosition | null = null;
   for (const p of positions) {
-    if (!topPosition || p.weight > topPosition.weight) topPosition = p;
+    if (!rarestPosition || p.weight < rarestPosition.weight) rarestPosition = p;
   }
 
   return {
@@ -142,8 +146,8 @@ export function readEconomics(machine: GachaMachine): VaultEconomics {
     feeShare: price > 0n ? Number(fee) / Number(price) : 0,
     odds,
     rarities,
-    topWeight: topPosition ? topPosition.weight : 0,
-    topPosition,
+    rarestWeight: rarestPosition ? rarestPosition.weight : 0,
+    rarestPosition,
   };
 }
 

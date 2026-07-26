@@ -17,6 +17,22 @@ export function ethFromWei(wei: bigint, dp = 4): string {
   return negative ? `-${body}` : body;
 }
 
+/**
+ * Decimal places that keep a figure meaningful at its own magnitude.
+ *
+ * The acquisition price is the harmonic mean of position backing, so it moves
+ * by orders of magnitude as the vault fills. A fixed four places renders a
+ * 0.0220 ETH price as three significant figures and a 44 ETH price as six.
+ * Callers pick the scale once, from the headline figure, and format every
+ * related number with it so the column stays aligned.
+ */
+export function ethScale(wei: bigint): number {
+  const abs = wei < 0n ? -wei : wei;
+  if (abs >= 10n ** 18n) return 4;
+  if (abs >= 10n ** 16n) return 6;
+  return 8;
+}
+
 /** wei -> float ETH. Only for chart geometry, never for a displayed figure. */
 export function weiToEth(wei: bigint): number {
   return Number(wei) / 1e18;

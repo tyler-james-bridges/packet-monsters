@@ -15,8 +15,28 @@
   position: relative;
   z-index: 30;
   flex: 0 0 auto;
-  padding: 0 var(--gutter) var(--s4);
+  padding: var(--s5) var(--gutter) var(--s4);
   pointer-events: none;
+  /* Phone: a real control sheet. At this density a gradient scrim alone does
+     not survive a bright vault frame behind it, and the dock owns enough of the
+     screen that a surface reads as intentional rather than heavy. */
+  background: linear-gradient(
+    180deg,
+    rgba(5, 7, 12, 0) 0%,
+    rgba(5, 7, 12, 0.84) 9%,
+    rgba(4, 6, 10, 0.95) 30%,
+    rgba(4, 6, 10, 0.985) 100%
+  );
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+/* Insurance for the small type in the side zones on desktop, where there is no
+   sheet behind them and a legendary flash can put a bright frame underneath. */
+.dock-price,
+.dock-odds,
+.pull-status {
+  text-shadow: 0 1px 2px rgba(2, 3, 6, 0.7);
 }
 
 /* The dock belongs to the vault view. When an overlay is open it fades out and
@@ -30,7 +50,7 @@
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   align-items: end;
-  gap: var(--s4);
+  gap: var(--s3);
 }
 
 .dock-cell {
@@ -85,7 +105,7 @@
   display: flex;
   gap: 2px;
   height: 3px;
-  margin: 10px 0 9px;
+  margin: 8px 0 7px;
   max-width: 260px;
 }
 
@@ -195,7 +215,7 @@
 
 .phase-name {
   font-size: 8.5px;
-  color: var(--ink-4);
+  color: var(--ink-3);
   letter-spacing: 0.14em;
   text-indent: 0.07em;
   font-weight: 600;
@@ -471,7 +491,10 @@
   line-height: 1;
 }
 
+/* Phone: the vault totals live in the odds view and the header. Repeating
+   them under a two column odds block is filler. */
 .odds-foot {
+  display: none;
   margin-top: var(--s3);
   padding-top: var(--s2);
   border-top: 1px solid var(--line-0);
@@ -489,24 +512,57 @@
 @media (min-width: 900px) {
   .dock {
     padding: 0 var(--gutter) var(--s6);
+    background: none;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
   }
 
+  /* The centre track is sized, not content driven. An `auto` track collapses
+     the button to its label width, because the button asks for a percentage of
+     a track that is still being measured off the button. */
   .dock-grid {
-    grid-template-columns: minmax(230px, 1fr) auto minmax(230px, 1fr);
+    grid-template-columns: minmax(220px, 1fr) minmax(340px, 384px) minmax(220px, 1fr);
     gap: var(--s8);
+  }
+
+  /* Legibility beds.
+     A gradient painted on the cell itself always shows the cell's own edge,
+     because the ellipse is still part way up its ramp when it reaches the box
+     boundary. These are pseudo elements that overflow the cell by a wide
+     margin, with the ellipse sized to exactly half the pseudo element so it
+     reaches zero alpha on its own edges, far away from any text. The result is
+     a true vignette: dark under the type, gone before anything you could
+     mistake for a panel edge. */
+  .dock-cell {
+    position: relative;
+    isolation: isolate;
+  }
+
+  .dock-price::before,
+  .dock-action::before,
+  .dock-odds::before {
+    content: '';
+    position: absolute;
+    z-index: -1;
+    pointer-events: none;
+    background: radial-gradient(
+      50% 50% at 50% 50%,
+      rgba(3, 5, 9, 0.94) 0%,
+      rgba(3, 5, 9, 0.9) 30%,
+      rgba(3, 5, 9, 0.66) 54%,
+      rgba(3, 5, 9, 0.3) 76%,
+      rgba(3, 5, 9, 0.08) 90%,
+      rgba(3, 5, 9, 0) 100%
+    );
   }
 
   .dock-price {
     order: 0;
     justify-self: start;
-    margin: calc(var(--s4) * -1) 0 0 calc(var(--s5) * -1);
-    padding: var(--s4) var(--s6) var(--s3) var(--s5);
-    background: radial-gradient(
-      128% 150% at 0% 100%,
-      rgba(4, 6, 11, 0.9) 0%,
-      rgba(4, 6, 11, 0.62) 46%,
-      rgba(4, 6, 11, 0) 78%
-    );
+  }
+
+  .dock-price::before {
+    inset: -78px -180px -104px -190px;
   }
 
   .price-claim {
@@ -515,8 +571,22 @@
 
   .dock-action {
     order: 0;
-    justify-self: center;
-    width: min(380px, 100%);
+    justify-self: stretch;
+    width: 100%;
+  }
+
+  /* Weaker than the side zones: the button carries its own contrast and the
+     altar sits directly behind this column. */
+  .dock-action::before {
+    inset: -60px -120px -86px;
+    background: radial-gradient(
+      50% 50% at 50% 50%,
+      rgba(3, 5, 9, 0.82) 0%,
+      rgba(3, 5, 9, 0.74) 30%,
+      rgba(3, 5, 9, 0.5) 55%,
+      rgba(3, 5, 9, 0.2) 77%,
+      rgba(3, 5, 9, 0) 100%
+    );
   }
 
   .pull {
@@ -529,14 +599,10 @@
     justify-self: end;
     width: 100%;
     max-width: 336px;
-    margin: calc(var(--s4) * -1) calc(var(--s5) * -1) 0 0;
-    padding: var(--s4) var(--s5) var(--s3) var(--s6);
-    background: radial-gradient(
-      128% 150% at 100% 100%,
-      rgba(4, 6, 11, 0.9) 0%,
-      rgba(4, 6, 11, 0.62) 46%,
-      rgba(4, 6, 11, 0) 78%
-    );
+  }
+
+  .dock-odds::before {
+    inset: -76px -190px -102px -170px;
   }
 
   .dock-odds .cell-label {
@@ -566,9 +632,10 @@
     position: absolute;
     inset: 0 auto 0 0;
     width: calc(var(--w, 0) * 1%);
+    min-width: 3px;
     background: var(--hue);
     border-radius: 2px;
-    opacity: 0.9;
+    opacity: 0.92;
   }
 
   .odds-alt {
@@ -580,6 +647,7 @@
   }
 
   .odds-foot {
+    display: block;
     padding-top: var(--s3);
     text-align: right;
   }

@@ -216,9 +216,11 @@ export function createCardStage(ctx: AppContext): System {
   // --- physics --------------------------------------------------------------
   const world = new PhysicsWorld();
   const cardBody = new RigidBody({
-    // A real trading card is about 1.8 g. Keeping the true mass with a plausible
-    // air density is what gives the fall its characteristic time.
-    mass: 0.0019,
+    // Areal density of real card stock is about 0.33 kg/m^2. At this card's
+    // scale that is 90 g. Using the real areal density rather than a real card's
+    // total mass is what makes the fall behave like card stock: same terminal
+    // velocity, longer and more readable flutter period.
+    mass: 0.09,
     size: new THREE.Vector3(CARD_W, CARD_H, CARD_T),
     linearDamping: 0.05,
     angularDamping: 0.12,
@@ -247,6 +249,14 @@ export function createCardStage(ctx: AppContext): System {
   // --- sequence state -------------------------------------------------------
   let beat: AnimBeat = 'idle';
   let beatTime = 0;
+  let beatDur = 0;
+  /**
+   * The stage's own clock. Everything that drives continuous motion reads this
+   * rather than `FrameTime.elapsed`, so the shot harness can fast forward the
+   * whole sequence inside a single real frame and the noise phase stays
+   * continuous across the seam.
+   */
+  let animClock = 0;
   let choreo: Choreo = choreoFor(0);
   let rarity = 0;
   let seqSeed = 1;
@@ -285,23 +295,50 @@ export function createCardStage(ctx: AppContext): System {
    * Transition log, published so shot settle frames can be tuned against the real
    * simulated timing instead of guessed. Bounded, and read by tooling only.
    */
-  const beatLog: Array<{ beat: AnimBeat; frame: number }> = [];
+  const beatLog: Array<{ beat: AnimBeat; at: number; y: number; vy: number }> = [];
   (window as unknown as Record<string, unknown>).__animBeats = beatLog;
 
-  function setBeat(next: AnimBeat, duration: number, frame: number): void {
+  const r3 = (x: number) => Math.round(x * 1000) / 1000;
+
+  function setBeat(next: AnimBeat, duration: number): void {
     beat = next;
     beatTime = 0;
-    if (beatLog.length < 64) beatLog.push({ beat: next, frame });
-    bus.emit('anim:beat', { beat: next, rarity, duration });
+    beatDur = duration;
+    if (beatLog.length < 64) {
+      beatLog.push({
+        beat: next,
+        at: r3(animClock),
+        y: r3(cardBody.position.y),
+        vy: r3(cardBody.velocity.y),
+      });
+    }
+    bus.emit('anim:beat', { beat: next, rarity, duration, offset: 0 });
+  }
+
+  /** Re-broadcast the current beat with how far into it the sequence already is. */
+  function resync(): void {
+    bus.emit('anim:beat', { beat, rarity, duration: beatDur, offset: beatTime });
   }
 
   // The impact beat is triggered by a real contact, not a timer. Anything past a
   // gentle touch during the flight counts as the landing.
+  const contactLog: unknown[] = [];
+  (window as unknown as Record<string, unknown>).__animContacts = contactLog;
   world.contacts((c) => {
+    if (contactLog.length < 20) {
+      contactLog.push({
+        p: c.planeId,
+        s: r3(c.speed),
+        y: r3(c.point.y),
+        by: r3(cardBody.position.y),
+        at: r3(animClock),
+        b: beat,
+      });
+    }
     if (beat === 'burst' && c.speed > 0.35) landed = true;
   });
 
-  function resetSequence(frame = 0): void {
+  function resetSequence(): void {
     beat = 'idle';
     beatTime = 0;
     landed = false;
@@ -322,8 +359,8 @@ export function createCardStage(ctx: AppContext): System {
     debrisActive = false;
     for (const d of debris) d.mesh.visible = false;
     beatLog.length = 0;
-    bus.emit('anim:beat', { beat: 'idle', rarity, duration: 0 });
-    void frame;
+    beatDur = 0;
+    bus.emit('anim:beat', { beat: 'idle', rarity, duration: 0, offset: 0 });
   }
 
   function tint(color: THREE.Color): void {
@@ -334,7 +371,7 @@ export function createCardStage(ctx: AppContext): System {
     backMat.emissive.copy(color);
   }
 
-  function beginSequence(position: VaultPosition, index: number, frame: number): void {
+  function beginSequence(position: VaultPosition, index: number): void {
     rarity = position.card.rarity;
     choreo = choreoFor(rarity);
     hero = position;
@@ -355,7 +392,7 @@ export function createCardStage(ctx: AppContext): System {
     for (const d of debris) d.mesh.visible = false;
 
     buildChargeTimeline();
-    setBeat('charge', choreo.chargeDur + choreo.holdDur, frame);
+    setBeat('charge', choreo.chargeDur + choreo.holdDur);
     bus.emit('audio:cue', { id: 'packet-charge', intensity: clamp01(rarity / 4) });
   }
 
@@ -398,7 +435,7 @@ export function createCardStage(ctx: AppContext): System {
       .track('face', face);
   }
 
-  function burst(frame: number): void {
+  function burst(): void {
     // Card leaves along the packet's own up axis, so the ejection reads as coming
     // out of the pouch rather than out of the world.
     packet.updateMatrixWorld(true);
@@ -443,16 +480,16 @@ export function createCardStage(ctx: AppContext): System {
 
     bus.emit('camera:shake', { amount: choreo.burstShake, duration: choreo.shakeDur * 0.55 });
     bus.emit('audio:cue', { id: 'packet-burst', intensity: clamp01(0.4 + rarity / 5) });
-    setBeat('burst', choreo.maxFlight, frame);
+    setBeat('burst', choreo.maxFlight);
   }
 
-  function enterImpact(frame: number): void {
+  function enterImpact(): void {
     bus.emit('camera:shake', { amount: choreo.impactShake, duration: choreo.shakeDur });
     bus.emit('audio:cue', { id: 'card-impact', intensity: clamp01(0.3 + rarity / 4) });
-    setBeat('impact', choreo.impactHold, frame);
+    setBeat('impact', choreo.impactHold);
   }
 
-  function enterTurn(frame: number): void {
+  function enterTurn(): void {
     cardBody.active = false;
     turnFrom.copy(cardBody.position);
     turnFromQ.copy(cardBody.quaternion);
@@ -470,24 +507,24 @@ export function createCardStage(ctx: AppContext): System {
     turnTl.reset(choreo.turnDur);
 
     bus.emit('audio:cue', { id: 'reveal-turn', intensity: clamp01(0.3 + rarity / 4) });
-    setBeat('turn', choreo.turnDur, frame);
+    setBeat('turn', choreo.turnDur);
   }
 
-  function enterSettle(frame: number): void {
+  function enterSettle(): void {
     settlePos.snap(card.position);
     settleQ.copy(card.quaternion);
     settleW.set(0, 0, 0);
     bus.emit('audio:cue', { id: 'reveal-settled', intensity: clamp01(0.3 + rarity / 4) });
-    setBeat('settle', 0, frame);
+    setBeat('settle', 0);
   }
 
   // --- bus ------------------------------------------------------------------
   bus.on('pull:committed', ({ positions }) => {
-    if (positions.length > 0) beginSequence(positions[0], 0, frameNow);
+    if (positions.length > 0) beginSequence(positions[0], 0);
   });
 
   bus.on('reveal:start', ({ position, index }) => {
-    if (beat === 'idle' || index !== currentIndex) beginSequence(position, index, frameNow);
+    if (beat === 'idle' || index !== currentIndex) beginSequence(position, index);
     unlocked.burst = true;
   });
 
@@ -505,9 +542,9 @@ export function createCardStage(ctx: AppContext): System {
   });
 
   // --- per beat visuals -----------------------------------------------------
-  let frameNow = 0;
 
-  function updateIdle(elapsed: number, dt: number): void {
+  function updateIdle(dt: number): void {
+    const elapsed = animClock;
     // Two slow oscillators at incommensurate rates plus low frequency noise, so
     // the loop never visibly repeats and the packet never sits dead.
     const bob = Math.sin(elapsed * 0.83) * 0.014 + fbm1(elapsed * 0.19, 3) * 0.009;
@@ -535,7 +572,8 @@ export function createCardStage(ctx: AppContext): System {
     stepSpring(glowSpring, 0.3 + pressure * 0.45, 4, dt);
   }
 
-  function updateCharge(elapsed: number, dt: number): void {
+  function updateCharge(dt: number): void {
+    const elapsed = animClock;
     chargeTl.advance(dt);
     const sq = chargeTl.value('squash');
     const tr = chargeTl.value('tremor');
@@ -590,7 +628,8 @@ export function createCardStage(ctx: AppContext): System {
     stepSpring(glowSpring, mix(choreo.glow * 1.6, choreo.glow * 0.5, u), 3, dt);
   }
 
-  function updateSettle(elapsed: number, dt: number): void {
+  function updateSettle(dt: number): void {
+    const elapsed = animClock;
     // Continuing motion: a slow float plus a lazy tilt, both noise driven so the
     // hero pose reads as suspended rather than parked.
     const drift = fbm1(elapsed * 0.21, 71, 3);
@@ -658,89 +697,112 @@ export function createCardStage(ctx: AppContext): System {
     };
   }
 
-  function driveShot(r: number, stages: { start?: boolean; impact?: boolean; settled?: boolean }) {
+  /**
+   * Drive the sequence to a chosen moment.
+   *
+   * `unlock` decides which beats are reachable: withholding an event parks the
+   * choreography at the end of a beat, which is how `charging` holds full
+   * compression indefinitely. `preroll` seconds are simulated instantly, and the
+   * remaining `settleFrames` are rendered so springs, shake decay and secondary
+   * motion are all live in the captured frame rather than frozen mid seek.
+   */
+  function driveShot(
+    r: number,
+    unlock: { start?: boolean; impact?: boolean; settled?: boolean },
+    preroll: number
+  ): void {
     resetSequence();
-    beginSequence(pickPosition(r), 0, frameNow);
-    if (stages.start) unlocked.burst = true;
-    if (stages.impact) unlocked.turn = true;
-    if (stages.settled) unlocked.settle = true;
+    beginSequence(pickPosition(r), 0);
+    if (unlock.start) unlocked.burst = true;
+    if (unlock.impact) unlocked.turn = true;
+    if (unlock.settled) unlocked.settle = true;
+    fastForward(preroll);
   }
 
-  // Beats that can park (charge with the burst withheld, impact with the turn
-  // withheld, settle which is terminal) are frame count insensitive. The two that
-  // cannot, burst and turn, are timed against the authored beat lengths.
-  registerShot('idle', { apply: () => resetSequence(), settleFrames: 110 });
+  const ALL = { start: true, impact: true, settled: true };
+  const RENDERED = 34 / 60; // seconds of real rendered settling in every shot
+
+  registerShot('idle', {
+    apply: () => {
+      resetSequence();
+      fastForward(2.4); // let the breathing loop get away from its start phase
+    },
+    settleFrames: 34,
+  });
 
   registerShot('charging', {
-    // Legendary wind up, parked at full compression on the dead beat.
-    apply: () => driveShot(4, {}),
-    settleFrames: 130,
+    // Legendary wind up, parked at full compression on the dead beat, which is
+    // the peak of the anticipation and the frame worth reviewing.
+    apply: () => driveShot(4, {}, 2.45 - RENDERED),
+    settleFrames: 34,
   });
 
   registerShot('burst', {
-    apply: () => driveShot(4, { start: true }),
-    settleFrames: 142,
+    // Just after the tear: card off the plinth, packet shrapnel still in frame.
+    apply: () => driveShot(4, { start: true }, 2.33 - RENDERED),
+    settleFrames: 34,
   });
 
   registerShot('reveal-turn', {
-    apply: () => driveShot(4, { start: true, impact: true, settled: true }),
-    settleFrames: 258,
+    // Deep into the hero turn, on the held plateau where the face has raked
+    // around to the key light but has not squared up yet.
+    apply: () => driveShot(4, ALL, 4.02 - RENDERED),
+    settleFrames: 34,
   });
 
   registerShot('settled-legendary', {
-    apply: () => driveShot(4, { start: true, impact: true, settled: true }),
-    settleFrames: 360,
+    apply: () => driveShot(4, ALL, 6.0 - RENDERED),
+    settleFrames: 34,
   });
 
   registerShot('settled-common', {
-    apply: () => driveShot(0, { start: true, impact: true, settled: true }),
-    settleFrames: 190,
+    apply: () => driveShot(0, ALL, 3.2 - RENDERED),
+    settleFrames: 34,
   });
 
   // Kept so existing capture scripts that ask for `hero` still resolve; it is the
   // same terminal pose as `settled-legendary`.
   registerShot('hero', {
-    apply: () => driveShot(4, { start: true, impact: true, settled: true }),
-    settleFrames: 360,
+    apply: () => driveShot(4, ALL, 6.0 - RENDERED),
+    settleFrames: 34,
   });
 
   // --- system ---------------------------------------------------------------
-  return {
-    name: 'card-stage',
-
-    update(t) {
-      frameNow = t.frame;
-      beatTime += t.dt;
+  function tick(dt: number): void {
+    {
+      const t = { dt };
+      animClock += dt;
+      beatTime += dt;
 
       switch (beat) {
         case 'idle':
-          updateIdle(t.elapsed, t.dt);
+          updateIdle(t.dt);
           break;
 
         case 'charge':
-          updateCharge(t.elapsed, t.dt);
-          if (chargeTl.done && unlocked.burst) burst(t.frame);
+          updateCharge(t.dt);
+          if (chargeTl.done && unlocked.burst) burst();
           break;
 
         case 'burst':
           world.step(t.dt);
           cardBody.writeTo(card);
-          if (landed || beatTime > choreo.maxFlight) enterImpact(t.frame);
+          if (landed || beatTime > choreo.maxFlight) enterImpact();
           break;
 
         case 'impact':
           world.step(t.dt);
           cardBody.writeTo(card);
-          if (beatTime > choreo.impactHold && unlocked.turn) enterTurn(t.frame);
+          if (beatTime > choreo.impactHold && unlocked.turn) enterTurn();
           break;
 
         case 'turn':
           updateTurn(t.dt);
-          if (turnTl.done && unlocked.settle) enterSettle(t.frame);
+          if (turnTl.done && unlocked.settle) enterSettle();
           break;
 
         case 'settle':
-          updateSettle(t.elapsed, t.dt);
+          updateSettle(t.dt);
           break;
       }
 
@@ -766,6 +828,30 @@ export function createCardStage(ctx: AppContext): System {
       bus.emit('card:pose', posePayload);
 
       void hero;
+    }
+  }
+
+  /**
+   * Advance the whole sequence inside a single real frame.
+   *
+   * Software rendering runs at a few frames per second, so waiting out a five
+   * second legendary in rendered frames is not viable for the shot harness. The
+   * simulation is pure and fixed step, so stepping it here produces exactly the
+   * state the rendered path would have reached, at zero render cost. The trailing
+   * `resync` tells the camera rig to snap rather than ease, because a seek is not
+   * a camera move.
+   */
+  function fastForward(seconds: number): void {
+    const steps = Math.max(0, Math.round(seconds * 60));
+    for (let i = 0; i < steps; i++) tick(1 / 60);
+    resync();
+  }
+
+  return {
+    name: 'card-stage',
+
+    update(t) {
+      tick(t.dt);
     },
 
     dispose() {

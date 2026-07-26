@@ -132,11 +132,15 @@ export interface AppEvents {
    * The camera rig, VFX and audio cut against this rather than re-deriving the
    * sequence timing, so the picture and the subject never drift apart.
    * `duration` is the authored length of the beat in seconds (0 if open ended).
+   * `offset` is how far into the beat the sequence already is: normally 0, but
+   * non-zero when the shot harness has fast forwarded, in which case listeners
+   * should snap rather than ease into their new state.
    */
   'anim:beat': {
     beat: 'idle' | 'charge' | 'burst' | 'impact' | 'turn' | 'settle';
     rarity: number;
     duration: number;
+    offset: number;
   };
   /**
    * Live pose of whatever object is currently the subject (sealed packet, then

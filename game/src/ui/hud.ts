@@ -145,12 +145,16 @@ export function createHud(ctx: AppContext, root: HTMLElement): System {
 
     if (view === 'vault') {
       enter(dock.root, { y: 16, duration: Dur.base, easing: Ease.outExpo });
+      enter(stageLayer, { y: 10, duration: Dur.base, easing: Ease.outExpo });
       if (moveFocus && lastFocus && document.body.contains(lastFocus)) lastFocus.focus();
       lastFocus = null;
       return;
     }
 
+    // The dock and the reveal readout belong to the vault view. Leaving them
+    // lit under a translucent overlay reads as a rendering mistake.
     exit(dock.root, { y: 14, duration: Dur.fast, easing: Ease.inCubic });
+    exit(stageLayer, { y: 8, duration: Dur.fast, easing: Ease.inCubic });
     const panel = panelFor(view);
     if (!panel) return;
     panel.hidden = false;

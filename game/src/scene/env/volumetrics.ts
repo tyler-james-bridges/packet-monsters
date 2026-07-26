@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { hash2i } from './noise';
+import { fbm2 } from './noise';
 
 /**
  * Raymarched god rays for the key light.
@@ -44,65 +44,32 @@ export interface VolumetricsOptions {
   blueNoiseSize: number;
 }
 
-/** Tileable 3D value noise baked once into a small volume texture. */
-function createHazeVolume(size: number): THREE.Data3DTexture {
-  const data = new Uint8Array(size * size * size);
-  const wrap = (i: number, n: number) => ((i % n) + n) % n;
-  const fade = (t: number) => t * t * t * (t * (t * 6 - 15) + 10);
-
-  const lattice = (period: number, seed: number, x: number, y: number, z: number): number => {
-    const fx = x * period;
-    const fy = y * period;
-    const fz = z * period;
-    const ix = Math.floor(fx);
-    const iy = Math.floor(fy);
-    const iz = Math.floor(fz);
-    const ux = fade(fx - ix);
-    const uy = fade(fy - iy);
-    const uz = fade(fz - iz);
-    let acc = 0;
-    for (let dz = 0; dz < 2; dz++) {
-      const wz = wrap(iz + dz, period);
-      const kz = dz === 0 ? 1 - uz : uz;
-      for (let dy = 0; dy < 2; dy++) {
-        const wy = wrap(iy + dy, period);
-        const ky = dy === 0 ? 1 - uy : uy;
-        for (let dx = 0; dx < 2; dx++) {
-          const wx = wrap(ix + dx, period);
-          const kx = dx === 0 ? 1 - ux : ux;
-          // Fold z into the 2D hash; the wrap keeps the volume seamless.
-          acc += kx * ky * kz * hash2i(wx + wz * 8191, wy + wz * 131, seed);
-        }
-      }
-    }
-    return acc;
-  };
-
+/**
+ * Tileable haze noise baked once into a small 2D texture.
+ *
+ * This was a 3D volume first. A trilinear sampler3D fetch inside a raymarch
+ * loop is eight texel reads per sample and it dominated the entire frame; the
+ * shaft is sheared through the plane below so it still gets vertical structure
+ * for a quarter of the cost.
+ */
+function createHazeTexture(size: number): THREE.DataTexture {
+  const data = new Uint8Array(size * size);
   const inv = 1 / size;
-  for (let z = 0; z < size; z++) {
-    for (let y = 0; y < size; y++) {
-      for (let x = 0; x < size; x++) {
-        const u = (x + 0.5) * inv;
-        const v = (y + 0.5) * inv;
-        const w = (z + 0.5) * inv;
-        const n =
-          lattice(4, 5501, u, v, w) * 0.58 +
-          lattice(8, 7717, u, v, w) * 0.28 +
-          lattice(16, 9931, u, v, w) * 0.14;
-        data[z * size * size + y * size + x] = Math.round(Math.min(1, Math.max(0, n)) * 255);
-      }
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const u = (x + 0.5) * inv;
+      const v = (y + 0.5) * inv;
+      const n = fbm2(u, v, 3, 4, 5501) * 0.66 + fbm2(u, v, 11, 3, 7717) * 0.34;
+      data[y * size + x] = Math.round(Math.min(1, Math.max(0, n)) * 255);
     }
   }
-
-  const tex = new THREE.Data3DTexture(data, size, size, size);
-  tex.format = THREE.RedFormat;
-  tex.type = THREE.UnsignedByteType;
+  const tex = new THREE.DataTexture(data, size, size, THREE.RedFormat, THREE.UnsignedByteType);
   tex.colorSpace = THREE.NoColorSpace;
   tex.minFilter = THREE.LinearFilter;
   tex.magFilter = THREE.LinearFilter;
   tex.wrapS = THREE.RepeatWrapping;
   tex.wrapT = THREE.RepeatWrapping;
-  tex.wrapR = THREE.RepeatWrapping;
+  tex.generateMipmaps = false;
   tex.unpackAlignment = 1;
   tex.needsUpdate = true;
   return tex;
@@ -119,7 +86,6 @@ const vertexShader = /* glsl */ `
 
 const fragmentShader = /* glsl */ `
   precision highp float;
-  precision highp sampler3D;
 
   varying vec3 vWorld;
 
@@ -142,7 +108,7 @@ const fragmentShader = /* glsl */ `
   uniform float uPlinthHeight;
   uniform sampler2D uBlueNoise;
   uniform vec2 uBlueNoiseScale;
-  uniform sampler3D uHaze;
+  uniform sampler2D uHaze;
 
   const float INF = 1.0e9;
 
@@ -261,10 +227,14 @@ const fragmentShader = /* glsl */ `
         float shadow = cylinderShadow( p, uPlinthRadius, uPlinthHeight );
         shadow = min( shadow, cylinderShadow( p, uDaisRadius, uDaisHeight ) );
 
-        float drift = uTime * 0.035;
-        float haze = texture( uHaze, p * 0.085 + vec3( drift * 0.4, -drift, drift * 0.7 ) ).r;
-        float haze2 = texture( uHaze, p * 0.24 + vec3( -drift, drift * 0.5, drift ) ).r;
-        float turbulence = 0.45 + haze * 0.85 + haze2 * 0.35;
+        // One bilinear fetch per sample. Height shears the lookup so the haze
+        // still churns vertically, and a cheap sine supplies the fine octave.
+        float drift = uTime * 0.02;
+        vec2 hv = vec2( p.x * 0.085 + p.y * 0.045 + drift,
+                        p.z * 0.085 - p.y * 0.045 - drift * 1.6 );
+        float haze = texture2D( uHaze, hv ).r;
+        float fine = sin( p.x * 3.7 + uTime * 0.21 ) * sin( p.y * 2.9 - uTime * 0.17 );
+        float turbulence = 0.52 + haze * 0.92 + fine * 0.12;
 
         float dens = uDensity * exp( -max( 0.0, p.y ) * uHeightFalloff ) * turbulence;
         acc += gate * shadow * dens * stepLen * transmit;
@@ -282,7 +252,7 @@ const fragmentShader = /* glsl */ `
 
 export function createVolumetrics(opts: VolumetricsOptions): Volumetrics {
   const dir = opts.lightDir.clone().normalize();
-  const haze = createHazeVolume(32);
+  const haze = createHazeTexture(128);
 
   const apertureCenter = opts.axisPoint
     .clone()
@@ -330,16 +300,16 @@ export function createVolumetrics(opts: VolumetricsOptions): Volumetrics {
   // Proxy hull: a capped cylinder around the beam. Rendering back faces gives
   // exactly one fragment per covered pixel whether or not the camera is inside.
   const geometry = new THREE.CylinderGeometry(
-    opts.apertureRadius * 1.06,
-    opts.apertureRadius * 1.06,
-    13,
-    28,
+    opts.apertureRadius * 1.05,
+    opts.apertureRadius * 1.05,
+    9.5,
+    24,
     1,
     false
   );
   const mesh = new THREE.Mesh(geometry, material);
   mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
-  mesh.position.copy(opts.axisPoint).addScaledVector(dir, 1.6);
+  mesh.position.copy(opts.axisPoint).addScaledVector(dir, 1.9);
   mesh.frustumCulled = false;
   mesh.renderOrder = 24;
   mesh.name = 'vault-godrays';

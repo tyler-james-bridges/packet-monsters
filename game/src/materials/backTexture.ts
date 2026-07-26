@@ -27,24 +27,29 @@ import { fbm, range, rngFrom } from './noise';
 
 const BACK_SEED = 0x5ea1ed;
 
+/**
+ * Text set on a circular baseline. `dir` is +1 for the upper arc, where angle
+ * increases left to right, and -1 for the lower arc, where it must decrease so
+ * the glyphs stay upright and still read left to right.
+ */
 function arcText(
   ctx: Ctx2D,
   text: string,
   cx: number,
   cy: number,
   radius: number,
-  startAngle: number,
+  centreAngle: number,
   spread: number,
-  flip: boolean
+  dir: 1 | -1
 ): void {
   const chars = [...text];
   const n = chars.length;
   for (let i = 0; i < n; i++) {
     const t = n === 1 ? 0.5 : i / (n - 1);
-    const a = startAngle + (t - 0.5) * spread;
+    const a = centreAngle + dir * (t - 0.5) * spread;
     ctx.save();
     ctx.translate(cx + Math.cos(a) * radius, cy + Math.sin(a) * radius);
-    ctx.rotate(a + (flip ? -Math.PI / 2 : Math.PI / 2));
+    ctx.rotate(a + (dir * Math.PI) / 2);
     const w = ctx.measureText(chars[i]).width;
     ctx.fillText(chars[i], -w * 0.5, 0);
     ctx.restore();
@@ -98,33 +103,47 @@ export function composeBack(W = 768): { color: Surface; foil: Surface } {
   roundRect(c, pad * 0.36, pad * 0.36, W - pad * 0.72, H - pad * 0.72, 26 * k);
   c.clip();
 
+  // Hex lattice ground, the base layer of the security print.
+  const hexR = 26 * k;
+  for (let row = -1; row * hexR * 1.5 < H + hexR; row++) {
+    for (let col = -1; col * hexR * 1.74 < W + hexR; col++) {
+      const px = col * hexR * 1.74 + (row % 2 ? hexR * 0.87 : 0);
+      const py = row * hexR * 1.5;
+      polygon(c, px, py, hexR * 0.94, 6, Math.PI / 6);
+      c.strokeStyle = 'rgba(110,160,235,0.075)';
+      c.lineWidth = 1 * k;
+      c.stroke();
+    }
+  }
+
   // Radial burst behind the emblem.
   c.globalCompositeOperation = 'lighter';
   for (let i = 0; i < 96; i++) {
     const a = (i / 96) * Math.PI * 2;
-    const wA = 0.014;
+    const wA = 0.012;
     c.beginPath();
     c.moveTo(cx, cy);
     c.arc(cx, cy, H, a - wA, a + wA);
     c.closePath();
-    c.fillStyle = `rgba(60,110,200,${(0.02 + 0.02 * Math.sin(i * 3.1)).toFixed(3)})`;
+    c.fillStyle = `rgba(58,108,205,${(0.05 + 0.045 * Math.sin(i * 3.1)).toFixed(3)})`;
     c.fill();
   }
   c.globalCompositeOperation = 'source-over';
 
-  // Guilloche lattice.
-  c.strokeStyle = 'rgba(120,170,255,0.10)';
-  c.lineWidth = 0.9 * k;
-  for (let b = 0; b < 5; b++) {
+  // Guilloche rosettes. Banknote line work: the density is the point, a few
+  // faint curves read as an unfinished background.
+  for (let b = 0; b < 6; b++) {
     const kA = 2 + b;
     const kB = 7 + b * 3;
-    const rA = Math.min(W, H) * (0.24 + b * 0.09);
-    const rB = Math.min(W, H) * 0.05;
-    for (let cpy = 0; cpy < 3; cpy++) {
-      const off = cpy * 0.03;
+    const rA = Math.min(W, H) * (0.2 + b * 0.085);
+    const rB = Math.min(W, H) * (0.04 + b * 0.008);
+    c.strokeStyle = `rgba(130,180,255,${(0.3 - b * 0.03).toFixed(3)})`;
+    c.lineWidth = 1.1 * k;
+    for (let cpy = 0; cpy < 4; cpy++) {
+      const off = cpy * 0.022;
       c.beginPath();
-      for (let i = 0; i <= 400; i++) {
-        const t = (i / 400) * Math.PI * 2;
+      for (let i = 0; i <= 420; i++) {
+        const t = (i / 420) * Math.PI * 2;
         const x = cx + Math.cos(kA * t + off) * rA + Math.cos(kB * t) * rB;
         const y = cy + Math.sin(kA * t + off) * rA * 1.34 + Math.sin(kB * t) * rB;
         if (i === 0) c.moveTo(x, y);
@@ -134,13 +153,18 @@ export function composeBack(W = 768): { color: Surface; foil: Surface } {
     }
   }
 
-  // Micro-hatching field.
-  c.strokeStyle = 'rgba(140,190,255,0.045)';
+  // Cross hatch, at the pitch a real engraved plate uses.
   c.lineWidth = 1 * k;
-  for (let y = -H; y < H * 2; y += 7 * k) {
+  for (let yy = -H; yy < H * 2; yy += 9 * k) {
+    c.strokeStyle = 'rgba(150,200,255,0.085)';
     c.beginPath();
-    c.moveTo(0, y);
-    c.lineTo(W, y + W * 0.42);
+    c.moveTo(0, yy);
+    c.lineTo(W, yy + W * 0.42);
+    c.stroke();
+    c.strokeStyle = 'rgba(90,140,220,0.06)';
+    c.beginPath();
+    c.moveTo(0, yy);
+    c.lineTo(W, yy - W * 0.42);
     c.stroke();
   }
 
@@ -202,24 +226,37 @@ export function composeBack(W = 768): { color: Surface; foil: Surface } {
   c.lineWidth = 2 * k;
   c.stroke();
 
-  // Packet glyph: three stacked frames, the middle one offset, reading as a
-  // datagram in transit.
+  // Packet glyph: three datagrams in flight, each with a header notch, the
+  // middle one running ahead of the other two.
   for (let i = -1; i <= 1; i++) {
-    const w = R * 0.5;
-    const h = R * 0.14;
-    const ox = i === 0 ? R * 0.09 : 0;
-    roundRect(c, -w * 0.5 + ox, i * h * 1.6 - h * 0.5, w, h, h * 0.28);
-    c.fillStyle = i === 0 ? ACCENT : 'rgba(200,164,92,0.85)';
+    const w = R * (0.52 - Math.abs(i) * 0.06);
+    const hh = R * 0.13;
+    const ox = i === 0 ? R * 0.1 : -Math.abs(i) * R * 0.03;
+    const x0 = -w * 0.5 + ox;
+    const y0 = i * hh * 1.75 - hh * 0.5;
+    roundRect(c, x0, y0, w, hh, hh * 0.26);
+    c.fillStyle = i === 0 ? ACCENT : 'rgba(200,164,92,0.88)';
     c.fill();
+    // Header field.
+    c.fillStyle = 'rgba(8,12,22,0.55)';
+    c.fillRect(x0 + w * 0.08, y0 + hh * 0.28, w * 0.16, hh * 0.44);
+    // Motion trail.
+    c.beginPath();
+    c.moveTo(x0 - R * 0.09, y0 + hh * 0.5);
+    c.lineTo(x0 - R * 0.02, y0 + hh * 0.5);
+    c.strokeStyle = i === 0 ? 'rgba(111,215,255,0.55)' : 'rgba(200,164,92,0.4)';
+    c.lineWidth = hh * 0.22;
+    c.lineCap = 'round';
+    c.stroke();
   }
 
   // Arc lettering.
   c.fillStyle = METAL_HI;
   c.font = font(23 * k, 700, FONT_SANS);
-  arcText(c, 'PACKET MONSTERS', 0, 0, R * 0.76, -Math.PI / 2, 1.72, true);
+  arcText(c, 'PACKET MONSTERS', 0, 0, R * 0.76, -Math.PI / 2, 1.86, 1);
   c.font = font(17 * k, 700, FONT_SANS);
-  c.fillStyle = 'rgba(200,164,92,0.85)';
-  arcText(c, 'SEALED VAULT', 0, 0, R * 0.74, Math.PI / 2, 1.16, false);
+  c.fillStyle = 'rgba(200,164,92,0.9)';
+  arcText(c, 'SEALED VAULT', 0, 0, R * 0.75, Math.PI / 2, 1.22, -1);
 
   c.restore();
 

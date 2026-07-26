@@ -94,7 +94,7 @@
   pointer-events: auto;
   display: inline-flex;
   align-items: center;
-  gap: 11px;
+  gap: 9px;
   text-decoration: none;
   color: inherit;
   justify-self: start;
@@ -140,18 +140,22 @@
   line-height: 1;
 }
 
+/* A wordmark that wraps is not a wordmark. Both lines stay on one line at every
+   width; the nav gives up its padding instead. */
 .brand-name {
-  font-size: var(--t-cap);
+  font-size: var(--t-label);
   font-weight: 650;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.055em;
   color: var(--ink-0);
+  white-space: nowrap;
 }
 
 .brand-sub {
-  font-size: var(--t-micro);
+  font-size: 8.5px;
   color: var(--ink-3);
-  letter-spacing: var(--tk-wide);
-  margin-inline-end: calc(var(--tk-wide) * -1);
+  letter-spacing: 0.17em;
+  margin-inline-end: -0.17em;
+  white-space: nowrap;
 }
 
 /* --- nav ------------------------------------------------------------------ */
@@ -189,10 +193,11 @@
 .nav-tab {
   position: relative;
   z-index: 1;
-  padding: 7px 16px 8px;
+  padding: 7px 11px 8px;
   border-radius: var(--rad-pill);
   color: var(--ink-3);
-  font-size: var(--t-label);
+  font-size: 9.5px;
+  white-space: nowrap;
   transition: color var(--dur-fast) var(--ease-out);
 }
 
@@ -303,10 +308,28 @@
     height: 28px;
   }
 
+  .brand {
+    gap: 11px;
+  }
+
+  .brand-name {
+    font-size: var(--t-cap);
+  }
+
+  .brand-sub {
+    font-size: var(--t-micro);
+    letter-spacing: var(--tk-wide);
+    margin-inline-end: calc(var(--tk-wide) * -1);
+  }
+
   .nav-tab {
     padding: 8px 18px 9px;
     font-size: var(--t-label);
   }
+
+  /* Fade the reveal readout out with the dock when an overlay takes the screen;
+     leaving it under a translucent panel reads as a rendering mistake. */
+
 }
 
 /* Short landscape phones: reclaim vertical space from the header. */

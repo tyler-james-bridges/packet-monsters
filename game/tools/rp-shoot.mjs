@@ -59,15 +59,15 @@ const errors = [];
 page.on('pageerror', (e) => errors.push(String(e)));
 page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 
-await page.goto(`${base}?seed=${encodeURIComponent(SEED)}`, { waitUntil: 'domcontentloaded', timeout: 300000 });
+await page.goto(`${base}?seed=${encodeURIComponent(SEED)}`, { waitUntil: 'domcontentloaded', timeout: 900000 });
 await page.waitForFunction(() => Boolean(window.__harness), null, { timeout: 60000 });
 const available = await page.evaluate(() => window.__harness.shots);
 const targets = SHOTS.length ? SHOTS.filter((s) => available.includes(s)) : available;
 
 for (const shot of targets) {
   const t0 = Date.now();
-  await page.goto(`${base}?seed=${encodeURIComponent(SEED)}&shot=${encodeURIComponent(shot)}`, { waitUntil: 'domcontentloaded', timeout: 300000 });
-  await page.waitForFunction(() => window.__harness && window.__harness.ready === true, null, { timeout: 300000 });
+  await page.goto(`${base}?seed=${encodeURIComponent(SEED)}&shot=${encodeURIComponent(shot)}`, { waitUntil: 'domcontentloaded', timeout: 900000 });
+  await page.waitForFunction(() => window.__harness && window.__harness.ready === true, null, { timeout: 900000 });
   const stats = await page.evaluate(() => ({
     pipeline: window.__pipeline?.stats?.() ?? null,
     draws: window.__ctx?.renderer?.info?.render?.calls ?? null,

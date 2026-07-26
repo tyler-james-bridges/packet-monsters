@@ -88,7 +88,9 @@ export function createFloorReflection(
       rt.dispose();
       rt = makeTarget(width, height);
       api.texture = rt.texture;
-      api.maxLod = Math.floor(Math.log2(Math.max(width, height)));
+      // Capped: past six mips the buffer is a single smear and the roughness
+      // ramp below has nothing left to resolve.
+      api.maxLod = Math.min(6, Math.floor(Math.log2(Math.max(width, height))));
     },
 
     update(scene, camera, hide) {

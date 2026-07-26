@@ -89,8 +89,12 @@ function studioEnvironment(): THREE.Texture {
   tex.dispose();
   return env;
 }
-scene.environment = studioEnvironment();
-scene.environmentIntensity = 1.0;
+// ?noenv=1 exercises the shader path taken before the environment agent's probe
+// is bound, which must still compile and still read as light physics.
+if (!params.has('noenv')) {
+  scene.environment = studioEnvironment();
+  scene.environmentIntensity = 1.0;
+}
 
 // --- three point rig --------------------------------------------------------
 const key = new THREE.DirectionalLight(0xfff2e0, 3.4);
@@ -150,15 +154,21 @@ function bySpread(): CardRecord[] {
   return out;
 }
 
-const picked = mode === 'hero' ? bySpread().slice(0, 3) : bySpread().slice(0, 12);
-const faceRes = mode === 'hero' ? 1024 : 640;
+const spread = bySpread();
+const single = mode === 'print' || mode === 'backprint' || mode === 'edge';
+const picked = single
+  ? [spread[Number.parseInt(params.get('i') ?? '0', 10)] ?? spread[0]]
+  : mode === 'hero' || mode === 'back'
+    ? spread.slice(0, 3)
+    : spread.slice(0, 12);
+const faceRes = mode === 'grid' ? 640 : 1024;
 
 const geometry = createCardGeometry({ height: CARD.defaultHeight, cornerSegments: 14, rollSegments: 4 });
 const handles: CardMaterial[] = [];
 const group = new THREE.Group();
 scene.add(group);
 
-const cols = mode === 'hero' ? 3 : 4;
+const cols = single ? 1 : mode === 'hero' || mode === 'back' ? 3 : 4;
 const gapX = CARD.defaultHeight * CARD.aspect * 1.18;
 const gapY = CARD.defaultHeight * 1.16;
 const rows = Math.ceil(picked.length / cols);
@@ -174,9 +184,13 @@ picked.forEach((card, i) => {
   mesh.position.set((col - (cols - 1) / 2) * gapX, ((rows - 1) / 2 - row) * gapY, 0);
   // Fan the tilt across the grid so the interference is sampled over a wide
   // range of incidence angles in a single frame.
-  const tiltX = ((row / Math.max(rows - 1, 1)) - 0.5) * 0.62;
-  const tiltY = ((col / Math.max(cols - 1, 1)) - 0.5) * 0.9;
-  mesh.rotation.set(tiltX, tiltY, (i % 3) * 0.02 - 0.02);
+  const tiltX = (row / Math.max(rows - 1, 1) - 0.5) * 0.62;
+  const tiltY = (col / Math.max(cols - 1, 1) - 0.5) * 0.9;
+  if (mode === 'edge') mesh.rotation.set(0, Math.PI * 0.5, 0);
+  else if (mode === 'print') mesh.rotation.set(0, 0, 0);
+  else if (mode === 'backprint') mesh.rotation.set(0, Math.PI, 0);
+  else if (mode === 'back') mesh.rotation.set(tiltX * 0.5, Math.PI + tiltY * 0.5, 0);
+  else mesh.rotation.set(tiltX, tiltY, (i % 3) * 0.02 - 0.02);
   mat.setReveal(card.rarity >= 3 ? 0.4 : 0.0);
   group.add(mesh);
 });
@@ -193,8 +207,17 @@ scene.add(floor);
 const framedH = rows * gapY;
 const framedW = cols * gapX;
 const dist = Math.max(framedH / (2 * Math.tan((camera.fov * Math.PI) / 360)), framedW / (2 * Math.tan((camera.fov * Math.PI) / 360)) / camera.aspect) * 1.12;
-camera.position.set(0, 0, dist);
-camera.lookAt(0, 0, 0);
+if (mode === 'edge') {
+  // Sit the camera right on the trimmed edge so the laminate stack is readable.
+  const ex = CARD.defaultHeight * CARD.aspect * 0.5;
+  camera.near = 0.01;
+  camera.updateProjectionMatrix();
+  camera.position.set(0, 0, ex + 0.03);
+  camera.lookAt(0, 0, ex);
+} else {
+  camera.position.set(0, 0, dist);
+  camera.lookAt(0, 0, 0);
+}
 key.target.position.set(0, 0, 0);
 rim.target.position.set(0, 0, 0);
 
@@ -208,8 +231,11 @@ declare global {
   interface Window {
     __previewReady?: boolean;
     __previewStats?: unknown;
+    __previewCtx?: AppContext;
   }
 }
+
+window.__previewCtx = ctx;
 
 window.__previewStats = {
   ...cardMaterialStats(),

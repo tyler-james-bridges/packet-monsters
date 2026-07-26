@@ -1,7 +1,7 @@
 import { RARITY_NAMES } from '../../core/types';
 import { h, on, qs, qsa } from '../dom';
 import { Dur, Ease, animate, claim, readVar, tweenVar } from '../motion';
-import { bps, ethFromWei, oneIn, pct, seedHex } from '../format';
+import { bps, ethFromWei, ethScale, oneIn, pct, seedHex } from '../format';
 import { PROTOCOL, type VaultEconomics } from '../vaultAccess';
 
 /**
@@ -140,10 +140,13 @@ export function createActionBar(options: { onPull(): void }): ActionBar {
   });
 
   function setEconomics(econ: VaultEconomics): void {
-    priceEl.textContent = ethFromWei(econ.price, 4);
-    evEl.textContent = ethFromWei(econ.expectedValue, 4);
-    feeEl.textContent = ethFromWei(econ.fee, 4);
-    pullCost.innerHTML = `${ethFromWei(econ.price, 4)}<span class="unit">ETH</span>`;
+    // One scale, taken from the headline, shared by every figure in the cell so
+    // the decimal points line up under each other.
+    const dp = ethScale(econ.price);
+    priceEl.textContent = ethFromWei(econ.price, dp);
+    evEl.textContent = ethFromWei(econ.expectedValue, dp);
+    feeEl.textContent = ethFromWei(econ.fee, dp);
+    pullCost.innerHTML = `${ethFromWei(econ.price, dp)}<span class="unit">ETH</span>`;
 
     const feePct = econ.feeShare;
     splitWrap.setAttribute(
@@ -179,10 +182,12 @@ export function createActionBar(options: { onPull(): void }): ActionBar {
       })
       .join('');
 
-    const max = Math.max(...ordered.map((r) => r.probability), 0.0001);
+    // Absolute scale, not normalised against the largest tier. A bar that fills
+    // the track at 55 percent would imply 55 percent is the ceiling; the track
+    // is the whole probability space and a 0.66 percent tier should look like
+    // 0.66 percent. CSS gives the fill a minimum width so it never vanishes.
     qsa<HTMLElement>(oddsList, '.odds-bar b').forEach((bar, i) => {
-      const frac = (ordered[i].probability / max) * 100;
-      tweenVar(bar, '--w', 0, frac, {
+      tweenVar(bar, '--w', 0, ordered[i].probability * 100, {
         duration: Dur.reveal,
         delay: 60 + i * 45,
         easing: Ease.outExpo,
@@ -190,7 +195,7 @@ export function createActionBar(options: { onPull(): void }): ActionBar {
       });
     });
 
-    oddsFoot.textContent = `${econ.count} positions · ${ethFromWei(econ.totalBacking, 2)} ETH backed · fee ${bps(econ.feeBps)}`;
+    oddsFoot.textContent = `${econ.count} positions · ${ethFromWei(econ.totalBacking, 3)} ETH backed · fee ${bps(econ.feeBps)}`;
   }
 
   const LABELS: Record<PullState, string> = {

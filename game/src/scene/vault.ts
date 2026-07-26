@@ -12,6 +12,7 @@ import {
 import {
   buildInstanced,
   ceilingDisc,
+  ceilingRing,
   chamferedBox,
   floorDisc,
   floorRing,
@@ -72,8 +73,11 @@ export function createVault(ctx: AppContext): System {
     createConcreteTextures({
       size: texSize,
       seed: 1301,
-      base: [0.062, 0.067, 0.079],
-      variation: 0.030,
+      // Physically plausible dark cold concrete. Going darker than this to buy
+      // mood is a trap: the auto exposure just opens up and the frame goes
+      // noisy. Mood comes from the lighting, not from crushing the albedo.
+      base: [0.118, 0.126, 0.142],
+      variation: 0.042,
       roughnessRange: [0.54, 0.95],
       normalStrength: 26,
       anisotropy: aniso,
@@ -84,8 +88,10 @@ export function createVault(ctx: AppContext): System {
     createConcreteTextures({
       size: texSize,
       seed: 5507,
-      base: [0.028, 0.031, 0.038],
-      variation: 0.014,
+      // Ground and sealed slab: darker than the walls so the reflection reads
+      // as reflection rather than as a bright floor.
+      base: [0.050, 0.055, 0.066],
+      variation: 0.019,
       // Ground and sealed: still concrete, but it holds a reflection.
       roughnessRange: [0.10, 0.40],
       normalStrength: 9,
@@ -97,7 +103,9 @@ export function createVault(ctx: AppContext): System {
     createMetalTextures({
       size: texSize,
       seed: 907,
-      base: [0.152, 0.163, 0.186],
+      // F0 for dark anodised aluminium. Metals have no diffuse term, so this is
+      // the reflectance tint; push it much lower and the metal turns to soot.
+      base: [0.295, 0.312, 0.345],
       roughnessRange: [0.14, 0.42],
       mode: 'linear',
       normalStrength: 8,
@@ -110,7 +118,8 @@ export function createVault(ctx: AppContext): System {
     createMetalTextures({
       size: texSize,
       seed: 4409,
-      base: [0.205, 0.213, 0.232],
+      // Machined and unanodised: brighter, cleaner, tighter highlight.
+      base: [0.415, 0.428, 0.452],
       roughnessRange: [0.10, 0.34],
       mode: 'radial',
       normalStrength: 7,
@@ -147,10 +156,10 @@ export function createVault(ctx: AppContext): System {
       normalScale: 0.85,
     })
   );
-  const metalPanel = track(
-    createMetalMaterial(brushed, { envMapIntensity: 1.3, anisotropy: 0.7, normalScale: 0.85 })
-  );
-  enableInstanceUvOffset(metalPanel);
+  // The instanced metal parts (pilasters, ribs, bolts) reuse metalDark rather
+  // than carrying their own UV-offset variant: they are small and repetition is
+  // invisible on them, and every extra material variant is another full
+  // MeshPhysical program to compile.
 
   const metalTurned = track(
     createMetalMaterial(turned, {
@@ -236,13 +245,13 @@ export function createVault(ctx: AppContext): System {
     revolve(
       [
         [2.335, 0.0],
-        [2.3, 0.036],
-        [2.3, 0.115],
-        [2.262, 0.15],
-        [1.92, 0.15],
-        [1.92, 0.262],
-        [1.884, 0.3],
-        [1.12, 0.3],
+        [2.3, 0.03],
+        [2.3, 0.08],
+        [2.266, 0.11],
+        [1.92, 0.11],
+        [1.92, 0.17],
+        [1.886, 0.2],
+        [1.12, 0.2],
       ],
       96
     ),
@@ -262,17 +271,16 @@ export function createVault(ctx: AppContext): System {
   const plinthGeo = scaleUv(
     revolve(
       [
-        [1.1, 0.3],
-        [1.1, 0.35],
-        [1.062, 0.39],
-        [0.925, 0.44],
-        [0.905, 0.8],
-        [0.905, 0.86],
-        [0.965, 0.9],
-        [0.985, 0.955],
-        [0.985, 0.985],
-        [0.958, 1.02],
-        [0.0, 1.02],
+        [1.1, 0.2],
+        [1.1, 0.25],
+        [1.06, 0.29],
+        [0.9, 0.34],
+        [0.885, 0.505],
+        [0.93, 0.545],
+        [0.95, 0.585],
+        [0.95, 0.592],
+        [0.885, 0.62],
+        [0.0, 0.62],
       ],
       96
     ),
@@ -286,15 +294,15 @@ export function createVault(ctx: AppContext): System {
 
   // Turned cap inlay so the surface directly under the card is machined, not
   // the same brushed grain as the shaft.
-  const capGeo = scaleUv(floorRing(0.18, 0.94, 96), 1, 1);
+  const capGeo = scaleUv(floorRing(0.16, 0.862, 96), 1, 1);
   const cap = new THREE.Mesh(capGeo, metalTurned);
   cap.position.y = CHAMBER.plinthTopY + 0.002;
   cap.receiveShadow = true;
   group.add(cap);
 
-  const seamGeo = new THREE.CylinderGeometry(0.913, 0.913, 0.045, 96, 1, true);
+  const seamGeo = new THREE.CylinderGeometry(0.898, 0.898, 0.04, 96, 1, true);
   const seam = new THREE.Mesh(seamGeo, seamMaterial);
-  seam.position.y = 0.83;
+  seam.position.y = 0.45;
   group.add(seam);
 
   // ------------------------------------------------------------------- walls
@@ -338,17 +346,17 @@ export function createVault(ctx: AppContext): System {
   );
   group.add(reveals);
 
-  // Backlit pilasters break the panel rhythm and catch the rim light.
+  // Pilasters ride the panel centres, not the gaps: a fin parked on a reveal
+  // would simply eat one of the twenty four light lines.
   const pilasterGeo = scaleUv(chamferedBox(0.15, 4.14, 0.3, 0.022, 3), 0.4, 3.0);
   const pilasters = buildInstanced(
     pilasterGeo,
-    metalPanel,
+    metalDark,
     ringPlacements(
       CHAMBER.pilasters,
       CHAMBER.wallRadius - 0.1,
       CHAMBER.skirtHeight + CHAMBER.wallHeight / 2,
-      rng,
-      panelPitch / 2
+      rng
     )
   );
   pilasters.castShadow = false;
@@ -405,10 +413,9 @@ export function createVault(ctx: AppContext): System {
   group.add(cove);
 
   // ----------------------------------------------------------------- ceiling
-  const ceiling = new THREE.Mesh(
-    scaleUv(ceilingDisc(6.12, 96), 8, 8),
-    concreteWall
-  );
+  // An annulus, not a disc: the oculus lens sits above the ceiling plane and a
+  // solid slab would hide it and its reflection in the floor.
+  const ceiling = new THREE.Mesh(scaleUv(ceilingRing(1.5, 6.12, 96), 8, 8), concreteWall);
   ceiling.position.y = CHAMBER.ceilingY;
   group.add(ceiling);
 
@@ -416,7 +423,7 @@ export function createVault(ctx: AppContext): System {
   ribGeo.translate(0, 0, 3.85);
   const ribs = buildInstanced(
     ribGeo,
-    metalPanel,
+    metalDark,
     ringPlacements(24, 0, CHAMBER.ceilingY - 0.075, rng, panelPitch / 2)
   );
   group.add(ribs);
@@ -506,7 +513,7 @@ export function createVault(ctx: AppContext): System {
     );
     boltPlacements.push({ matrix: m, uvOffset: new THREE.Vector2(rng(), rng()) });
   }
-  const bolts = buildInstanced(boltGeo, metalPanel, boltPlacements);
+  const bolts = buildInstanced(boltGeo, metalDark, boltPlacements);
   group.add(bolts);
 
   // ------------------------------------------------------------- volumetrics
@@ -525,7 +532,7 @@ export function createVault(ctx: AppContext): System {
       color: KEY_COLOR.clone(),
       intensity: 0.62,
       density: 0.30,
-      steps: quality.tier === 'ultra' ? 32 : quality.tier === 'high' ? 22 : 14,
+      steps: quality.tier === 'ultra' ? 24 : quality.tier === 'high' ? 16 : 10,
       blueNoise,
       blueNoiseSize,
     });
@@ -546,6 +553,20 @@ export function createVault(ctx: AppContext): System {
 
   const accentColor = new THREE.Color();
   const tmpColor = new THREE.Color();
+
+  // The adaptive manager can move the tier at runtime. Rebuilding textures mid
+  // session would hitch, so the chamber only retunes what is free to retune:
+  // the raymarch step count and whether the floor probe runs at all.
+  let reflectionActive = reflectionEnabled;
+  const offQuality = ctx.bus.on('quality:changed', ({ settings }) => {
+    if (volumetrics) {
+      volumetrics.object.visible = settings.volumetrics;
+      volumetrics.setQuality(
+        settings.tier === 'ultra' ? 24 : settings.tier === 'high' ? 16 : 10
+      );
+    }
+    reflectionActive = settings.tier !== 'low' && reflection !== null;
+  });
 
   return {
     name: 'vault',
@@ -569,7 +590,7 @@ export function createVault(ctx: AppContext): System {
 
       if (volumetrics) volumetrics.update(t.elapsed, surge.value, accentColor);
 
-      if (reflection && reflectionUniforms) {
+      if (reflectionActive && reflection && reflectionUniforms) {
         reflection.update(scene, ctx.camera, hideForReflection);
         reflectionUniforms.uReflectMap.value = reflection.texture;
         reflectionUniforms.uReflectMaxLod.value = reflection.maxLod;
@@ -581,6 +602,7 @@ export function createVault(ctx: AppContext): System {
     },
 
     dispose() {
+      offQuality();
       scene.remove(group);
       group.traverse((o) => {
         const m = o as THREE.Mesh;

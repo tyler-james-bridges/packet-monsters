@@ -29,11 +29,25 @@ export interface Pipeline {
   resetHistory?(): void;
   /** Additive: pass counts and target memory, for the frame budget report. */
   stats?(): PipelineStats;
+  /** Additive: synchronous GPU timing, split into scene and post. */
+  profile?(iterations?: number): PipelineProfile;
+}
+
+export interface PipelineProfile {
+  /** Milliseconds for the scene render into the HDR target. */
+  sceneMs: number;
+  /** Milliseconds for a whole frame, scene plus every post pass. */
+  frameMs: number;
+  /** Milliseconds attributable to post processing alone. */
+  postMs: number;
+  iterations: number;
 }
 
 export interface PipelineStats {
   /** Fullscreen passes issued by the pipeline, including the scene render. */
   passes: number;
+  /** Frames this pipeline has rendered since construction. */
+  frames: number;
   /** Whole frame draw calls, scene plus post. */
   drawCalls: number;
   triangles: number;
@@ -73,7 +87,10 @@ function configFor(q: QualitySettings): PostConfig {
       feedback: q.taaSamples >= 16 ? 0.955 : q.taaSamples >= 8 ? 0.94 : 0.9,
       clampScale: q.taaSamples >= 8 ? 1.15 : 1.35,
       sharpen: high ? 0.22 : 0.12,
-      dilateDepth: q.tier !== 'low',
+      // Closest fragment dilation is four extra full resolution depth fetches
+      // for a silhouette stability win that only shows up when the camera is
+      // moving fast. Ultra pays for it, nothing else does.
+      dilateDepth: q.tier === 'ultra',
     },
     bloom: {
       mips: q.bloomMips,
@@ -89,7 +106,7 @@ function configFor(q: QualitySettings): PostConfig {
       fStop: 2.2,
       bokehScale: 1.45,
       maxRadius: 20,
-      taps: q.tier === 'ultra' ? 32 : 22,
+      taps: q.tier === 'ultra' ? 28 : 18,
       aperture: 0.7,
     },
     dofEnabled: q.dof,
@@ -152,7 +169,7 @@ export function createPipeline(ctx: AppContext): Pipeline {
   const bloom = new BloomChain(config.bloom);
   const dof = new DofPass(config.dof);
   const meter = new MeterPass({ attack: 2.6, release: 0.9, focusRate: 3.4 });
-  const grade = new GradePass({ ...DEFAULT_GRADE, grain: config.grain });
+  const grade = new GradePass({ ...DEFAULT_GRADE, grain: config.grain }, config.dof);
   const fxaa = new FxaaPass();
   const surge = new SurgeEnvelope();
 
@@ -167,6 +184,7 @@ export function createPipeline(ctx: AppContext): Pipeline {
   let bufferWidth = 0;
   let bufferHeight = 0;
   let passCount = 0;
+  let frameCount = 0;
   let focusRange = 0.75;
 
   const bufferSize = new THREE.Vector2();
@@ -209,7 +227,9 @@ export function createPipeline(ctx: AppContext): Pipeline {
     }
 
     grade.setAspect(w / h);
-    dof.configure({ ...config.dof, maxRadius: Math.max(4, h * config.dofRadiusFraction) });
+    config.dof.maxRadius = Math.max(4, h * config.dofRadiusFraction);
+    dof.configure(config.dof);
+    grade.setDof(config.dofEnabled);
   }
 
   function reconfigure(): void {
@@ -217,10 +237,9 @@ export function createPipeline(ctx: AppContext): Pipeline {
     taa.configure(config.taa);
     bloom.configure(config.bloom);
     grade.configure({ grain: config.grain, bloomStrength: config.bloomStrength });
-    dof.configure({
-      ...config.dof,
-      maxRadius: Math.max(4, bufferHeight * config.dofRadiusFraction),
-    });
+    config.dof.maxRadius = Math.max(4, bufferHeight * config.dofRadiusFraction);
+    dof.configure(config.dof);
+    grade.setDof(config.dofEnabled);
 
     // TAA on or off decides whether the FXAA fallback target exists at all.
     if (taa.enabled) {
@@ -271,6 +290,7 @@ export function createPipeline(ctx: AppContext): Pipeline {
       }
 
       surge.update(t.dt);
+      frameCount++;
       const fast = surge.fast;
       const slow = surge.slow;
 
@@ -303,9 +323,35 @@ export function createPipeline(ctx: AppContext): Pipeline {
       meter.render(renderer, runner, color, depth, t.dt);
       passCount += 2;
 
+      // Bloom reads the defocused image when DOF is on, which is the physically
+      // correct order: glare happens in the lens, after the aperture has already
+      // blurred whatever was off the focal plane.
+      let bloomSource = color;
+      let bloomWidth = bufferWidth;
+      let bloomHeight = bufferHeight;
+
       if (config.dofEnabled) {
-        color = dof.render(renderer, runner, color, depth, meter.texture);
-        passCount += 3;
+        const fields = dof.render(renderer, runner, color, depth, meter.texture);
+        passCount += 2;
+        if (fields) {
+          grade.pass.set('tDofFar', fields.far);
+          grade.pass.set('tDofNear', fields.near);
+          grade.pass.set('tDepth', depth);
+          grade.syncLens({
+            focal: dof.focal,
+            fStop: dof.fStop,
+            sensorHeight: config.dof.sensorHeight,
+            bokehScale: config.dof.bokehScale,
+            maxRadius: config.dof.maxRadius,
+            focusRange: dof.range,
+            heightPixels: bufferHeight,
+            near: camera.near,
+            far: camera.far,
+          });
+          bloomSource = fields.composite;
+          bloomWidth = fields.width;
+          bloomHeight = fields.height;
+        }
       }
 
       const base = grade.base;
@@ -315,7 +361,7 @@ export function createPipeline(ctx: AppContext): Pipeline {
       // More of the frame is allowed to glare while the flash is on.
       bloom.setThreshold(config.bloom.threshold * (1 - fast * 0.55), config.bloom.knee);
       bloom.setExposure(meter.texture, exposureScale);
-      bloom.render(renderer, runner, color);
+      bloom.render(renderer, runner, bloomSource, bloomWidth, bloomHeight);
       passCount += Math.max(1, config.bloom.mips * 2 - 1);
 
       grade.pass.set('uExposureScale', exposureScale);
@@ -386,10 +432,11 @@ export function createPipeline(ctx: AppContext): Pipeline {
         bytes += mip * 8 * 2; // down and up chains
         mip /= 4;
       }
-      if (config.dofEnabled) bytes += (full / 4) * 8 * 3 + full * 8;
+      if (config.dofEnabled) bytes += (full / 4) * 8 * 4;
       if (ldrTarget) bytes += full * 4;
       return {
         passes: passCount,
+        frames: frameCount,
         drawCalls: renderer.info.render.calls,
         triangles: renderer.info.render.triangles,
         textures: renderer.info.memory.textures,
@@ -400,6 +447,41 @@ export function createPipeline(ctx: AppContext): Pipeline {
         taa: taa.enabled,
         dof: config.dofEnabled,
         bloomMips: config.bloom.mips,
+      };
+    },
+
+    profile(iterations = 8): PipelineProfile {
+      // A GL command queue is asynchronous, so wall clock around a render call
+      // measures submission, not work. finish() drains it, which is exactly the
+      // wrong thing to do in a real frame and exactly the right thing here.
+      const gl = renderer.getContext();
+      const t: FrameTime = { dt: 1 / 60, elapsed: 0, frame: 0 };
+
+      api.render(t);
+      gl.finish();
+
+      let start = performance.now();
+      for (let i = 0; i < iterations; i++) {
+        renderer.setRenderTarget(sceneTarget);
+        renderer.render(scene, camera);
+      }
+      gl.finish();
+      const sceneMs = (performance.now() - start) / iterations;
+
+      start = performance.now();
+      for (let i = 0; i < iterations; i++) {
+        t.frame++;
+        api.render(t);
+      }
+      gl.finish();
+      const frameMs = (performance.now() - start) / iterations;
+
+      renderer.setRenderTarget(null);
+      return {
+        sceneMs: +sceneMs.toFixed(2),
+        frameMs: +frameMs.toFixed(2),
+        postMs: +(frameMs - sceneMs).toFixed(2),
+        iterations,
       };
     },
 

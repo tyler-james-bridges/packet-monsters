@@ -102,12 +102,18 @@ export function createCameraRig(ctx: AppContext): CameraRig {
 
   bus.on('camera:shake', ({ amount, duration }) => addTrauma(amount, duration));
 
+  let pendingSnap = false;
+
   bus.on('anim:beat', (e) => {
     beat = e.beat;
-    beatTime = 0;
+    beatTime = e.offset;
     beatDur = e.duration;
     choreo = choreoFor(e.rarity);
     manual = false;
+    // A non-zero offset means the sequence was seeked, not played. Teleport the
+    // rig to the shot it should already be holding; easing there would be a
+    // camera move that never happened.
+    if (e.offset > 0) pendingSnap = true;
   });
 
   bus.on('card:pose', (p) => {
@@ -243,6 +249,19 @@ export function createCameraRig(ctx: AppContext): CameraRig {
     update(t) {
       beatTime += t.dt;
       composeShot(t.dt);
+
+      if (pendingSnap) {
+        pendingSnap = false;
+        posSpring.snap(shot.pos);
+        lookSpring.snap(shot.look);
+        rollSpring.value = shot.roll;
+        rollSpring.velocity = 0;
+        fovSpring.value = shot.fov;
+        fovSpring.velocity = 0;
+        focusSpring.value = shot.pos.distanceTo(subject);
+        focusSpring.velocity = 0;
+        trauma = 0;
+      }
 
       // Track the subject's velocity so the aim spring leads a fast card instead
       // of permanently trailing it.

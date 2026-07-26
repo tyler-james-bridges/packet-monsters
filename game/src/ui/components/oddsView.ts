@@ -1,7 +1,7 @@
 import { RARITY_NAMES } from '../../core/types';
 import { esc, h, qs, qsa } from '../dom';
 import { Dur, Ease, stagger, tweenVar } from '../motion';
-import { bps, ethFromWei, oneIn, pct, weiToEth } from '../format';
+import { bps, eth, ethFromWei, ethScale, groupInt, oneIn, pct } from '../format';
 import { PROTOCOL, type VaultEconomics } from '../vaultAccess';
 
 export interface OddsView {
@@ -25,9 +25,10 @@ export function createOddsView(): OddsView {
           <header class="view-head" data-anim>
             <p class="eyebrow tk">PROTOCOL DISCLOSURE</p>
             <h1 class="view-title">Published draw odds</h1>
-            <p class="view-lede">Selection weight is committed backing over total backing, walked on an
-              integer Fenwick tree in wei. These figures are read out of the live vault at render time.
-              There is no second table.</p>
+            <p class="view-lede">Selection weight is the <b>reciprocal</b> of committed backing, normalised
+              across the vault and walked on an integer Fenwick tree in wei. The more ETH stands behind a
+              position, the rarer it is to draw. Every figure below is read out of the live vault at render
+              time. There is no second table.</p>
           </header>
 
           <section class="panel panel-table" data-anim aria-labelledby="odds-table-h">
@@ -60,13 +61,17 @@ export function createOddsView(): OddsView {
           <div class="view-cols">
             <section class="panel panel-price" data-anim aria-labelledby="price-h">
               <h2 class="panel-title tk" id="price-h">ACQUISITION PRICE</h2>
-              <p class="panel-lede">A vault priced below its expected payout is a free option. We price at
-                exact expected value plus a bounded fee, so composition can never be timed.</p>
+              <p class="panel-lede">A vault priced below its expected payout is a free option: buyers wait for
+                the composition to skew and drain it. Under reciprocal weighting the expected payout is the
+                harmonic mean of committed backing, computed exactly in fixed point, and the price is that
+                number plus a bounded fee. The vault cannot be timed.</p>
 
               <div class="formula mono">
-                <span>E[B]</span><span class="op">=</span><span>S2 / S1</span>
+                <span>w</span><span class="op">=</span><span>(1/B) / &Sigma;(1/B)</span>
                 <span class="op">·</span>
-                <span>price</span><span class="op">=</span><span>E[B] × (1 + fee)</span>
+                <span>E[B]</span><span class="op">=</span><span>n / &Sigma;(1/B)</span>
+                <span class="op">·</span>
+                <span>price</span><span class="op">=</span><span>E[B] &times; (1 + fee)</span>
               </div>
 
               <div class="stack" role="img" data-field="stack-label">
@@ -100,9 +105,9 @@ export function createOddsView(): OddsView {
                 proposer cannot see the secret, so neither steers the draw alone.</p></li>
               <li><span class="note-k tk">RESOLVE</span><p>The revealed secret is mixed with the beacon at the
                 resolve block and walked against the Fenwick tree of integer backing.</p></li>
-              <li><span class="note-k tk">FORCED</span><p>After <b data-field="n-window">--</b> blocks anyone may
-                force resolution from the beacon alone and claim the buyer's
-                <b data-field="n-bond">--</b> ETH bond. Refusing to reveal is never profitable.</p></li>
+              <li><span class="note-k tk">FORCED</span><p>The buyer has <b data-field="n-window">--</b> blocks from
+                commit to reveal. After that anyone may force resolution from the beacon alone and take the
+                buyer's <b data-field="n-bond">--</b> ETH bond. Refusing to reveal is never profitable.</p></li>
               <li><span class="note-k tk">ISOLATION</span><p>A commit binds to a vault epoch. Deposits and exits
                 after it land in the next epoch and cannot move the odds of a draw already in flight.</p></li>
             </ol>
@@ -121,7 +126,6 @@ export function createOddsView(): OddsView {
 
   function render(econ: VaultEconomics): void {
     const ordered = [...econ.rarities].sort((a, b) => b.rarity - a.rarity);
-    const maxProb = Math.max(...ordered.map((r) => r.probability), 0.0001);
 
     rows.innerHTML = ordered
       .map((r) => {
@@ -130,7 +134,7 @@ export function createOddsView(): OddsView {
         <tr class="r${r.rarity}">
           <th scope="row" class="tier-cell"><i class="tier-dot" aria-hidden="true"></i><span class="tk">${esc(RARITY_NAMES[r.rarity])}</span></th>
           <td class="num">${r.positions}</td>
-          <td class="num">${ethFromWei(r.backing, 4)}<span class="unit">ETH</span></td>
+          <td class="num">${ethFromWei(r.backing, 3)}<span class="unit">ETH</span></td>
           <td class="num strong">${pct(r.probability, 4)}</td>
           <td class="num muted">${freq ?? '—'}</td>
           <td class="col-bar"><span class="tbar"><b style="--w:0"></b></span></td>
@@ -139,19 +143,25 @@ export function createOddsView(): OddsView {
       .join('');
 
     bars = qsa<HTMLElement>(rows, '.tbar b');
+    // Absolute scale. The track is the whole probability space, so a 0.66 percent
+    // tier reads as 0.66 percent rather than being stretched against whichever
+    // tier happens to be largest today.
     bars.forEach((bar, i) => {
-      bar.dataset.target = ((ordered[i].probability / maxProb) * 100).toFixed(2);
+      bar.dataset.target = (ordered[i].probability * 100).toFixed(3);
     });
 
     field('t-count').textContent = String(econ.count);
-    field('t-backing').innerHTML = `${ethFromWei(econ.totalBacking, 4)}<span class="unit">ETH</span>`;
+    field('t-backing').innerHTML = `${ethFromWei(econ.totalBacking, 3)}<span class="unit">ETH</span>`;
     const totalProb = econ.rarities.reduce((s, r) => s + r.probability, 0);
     field('t-prob').textContent = pct(totalProb, 4);
 
     const feeShare = econ.feeShare;
-    field('ev').innerHTML = `${ethFromWei(econ.expectedValue, 6)}<span class="unit">ETH</span>`;
-    field('fee').innerHTML = `${ethFromWei(econ.fee, 6)}<span class="unit">ETH</span>`;
-    field('price').innerHTML = `${ethFromWei(econ.price, 6)}<span class="unit">ETH</span>`;
+    // Two places finer than the dock, because this is the disclosure page and
+    // the fee leg is two orders of magnitude smaller than the base.
+    const dp = Math.min(ethScale(econ.price) + 2, 10);
+    field('ev').innerHTML = `${ethFromWei(econ.expectedValue, dp)}<span class="unit">ETH</span>`;
+    field('fee').innerHTML = `${ethFromWei(econ.fee, dp)}<span class="unit">ETH</span>`;
+    field('price').innerHTML = `${ethFromWei(econ.price, dp)}<span class="unit">ETH</span>`;
     field('ev-pct').textContent = pct(1 - feeShare, 2);
     field('fee-pct').textContent = pct(feeShare, 2);
     field('fee-sub').textContent = `${bps(econ.feeBps)} of expected value, ceiling ${bps(econ.maxFeeBps)}`;
@@ -166,21 +176,25 @@ export function createOddsView(): OddsView {
     field('n-window').textContent = String(PROTOCOL.REVEAL_WINDOW);
     field('n-bond').textContent = ethFromWei(PROTOCOL.BOND, 4);
 
+    // Straight off the PROTOCOL record. There is deliberately no pity system, so
+    // there are deliberately no pity rows: a per-buyer reweighting would make the
+    // published odds untrue for the person reading them.
     const params: [string, string, string][] = [
-      ['FEE', bps(PROTOCOL.FEE_BPS), `${PROTOCOL.FEE_BPS} bps`],
+      ['FEE', bps(PROTOCOL.FEE_BPS), `${PROTOCOL.FEE_BPS} bps of expected value`],
       ['FEE CEILING', bps(PROTOCOL.MAX_FEE_BPS), 'immutable in the contract'],
-      ['RESOLVE DELAY', `${PROTOCOL.RESOLVE_DELAY}`, 'blocks before resolution is legal'],
-      ['REVEAL WINDOW', `${PROTOCOL.REVEAL_WINDOW}`, 'blocks before anyone may force resolve'],
+      ['LP FEE SHARE', bps(PROTOCOL.LP_FEE_SHARE_BPS), 'of the fee paid through to depositors'],
+      ['RESOLVE DELAY', `${PROTOCOL.RESOLVE_DELAY}`, 'blocks from commit to the pinned beacon'],
+      ['REVEAL WINDOW', `${PROTOCOL.REVEAL_WINDOW}`, 'blocks to reveal before forced resolution'],
       ['MIN BACKING', ethFromWei(PROTOCOL.MIN_BACKING, 4), 'ETH per position, blocks dust griefing'],
-      ['BUYER BOND', ethFromWei(PROTOCOL.BOND, 4), 'ETH, refunded on honest reveal'],
-      ['PITY CAP', `${PROTOCOL.PITY_CAP}`, 'consecutive misses to saturation'],
-      ['PITY BOOST', `${(Number(PROTOCOL.PITY_MAX_BOOST_BPS) / 10000).toFixed(1)}×`, 'maximum weight multiplier'],
-      ['VAULT BACKING', ethFromWei(econ.totalBacking, 4), 'ETH committed across all positions'],
+      ['MAX BACKING', ethFromWei(PROTOCOL.MAX_BACKING, 0), 'ETH per position, bounds the weight range'],
+      ['BUYER BOND', ethFromWei(PROTOCOL.BOND, 4), 'ETH, refunded on an honest reveal'],
+      ['MAX POSITIONS', groupInt(String(PROTOCOL.MAX_POSITIONS)), 'Fenwick tree capacity'],
+      ['VAULT BACKING', ethFromWei(econ.totalBacking, 3), 'ETH committed across all positions'],
       [
-        'TOP POSITION',
-        pct(econ.topWeight, 3),
-        econ.topPosition
-          ? `${econ.topPosition.card.name}, ${weiToEth(BigInt(Math.round(econ.topPosition.backing * 1e18))).toFixed(2)} ETH`
+        'RAREST POSITION',
+        pct(econ.rarestWeight, 4),
+        econ.rarestPosition
+          ? `${econ.rarestPosition.card.name}, ${eth(econ.rarestPosition.backing, 2)} ETH backing`
           : 'none',
       ],
     ];

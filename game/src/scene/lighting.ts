@@ -54,7 +54,7 @@ export function createLighting(ctx: AppContext): LightingSystem {
   const key = new THREE.DirectionalLight(KEY_COLOR.getHex(), KEY_BASE);
   key.color.copy(KEY_COLOR);
   key.position.copy(KEY_DIR).multiplyScalar(9.5);
-  key.target.position.set(0, 0.9, 0);
+  key.target.position.set(0, 0.75, 0);
   key.castShadow = true;
   key.shadow.mapSize.set(quality.shadowMapSize, quality.shadowMapSize);
   key.shadow.camera.near = 3.0;
@@ -69,7 +69,10 @@ export function createLighting(ctx: AppContext): LightingSystem {
   key.shadow.bias = quality.softShadows ? 0 : -0.00035;
   key.shadow.normalBias = 0.018;
   key.shadow.radius = quality.softShadows ? 3.5 : 1;
-  key.shadow.blurSamples = quality.softShadows ? 12 : 4;
+  // VSM blurs the whole map twice per frame, so the sample count is a real
+  // frame cost rather than a free quality dial. Eight is where the penumbra
+  // stops showing steps at this map size.
+  key.shadow.blurSamples = quality.softShadows ? 8 : 4;
   scene.add(key, key.target);
 
   // ------------------------------------------------------------------- fill
@@ -109,7 +112,7 @@ export function createLighting(ctx: AppContext): LightingSystem {
 
   const altarGlow = new THREE.PointLight(ACCENT_COLOR.getHex(), 5.5, 4.2, 2);
   altarGlow.color.copy(ACCENT_COLOR);
-  altarGlow.position.set(0, 0.86, 0);
+  altarGlow.position.set(0, 0.5, 0);
   scene.add(altarGlow);
 
   // A hemisphere term only insures against gaps in the probe; the IBL does the
