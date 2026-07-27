@@ -1,5 +1,7 @@
 import * as THREE from 'three';
-import './ui/hud.css';
+// The stylesheet is imported by the route, not here. Global CSS belongs to an
+// app directory module; pulling it in from a lazily imported engine module ties
+// style loading to a dynamic chunk, which is the wrong lifetime for it.
 import { createBus } from './core/bus';
 import { createRenderer } from './core/renderer';
 import { detectQuality } from './core/quality';

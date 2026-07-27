@@ -213,8 +213,14 @@ export function linear(
  * upstream. A face texture is decoration; it is never worth an app crash. Sub a
  * safe value, warn so the real cause stays findable, and carry on.
  */
+let reportedOrigin = false;
+
 function finite(value: number, fallback: number, label: string): number {
   if (Number.isFinite(value)) return value;
+  if (!reportedOrigin) {
+    reportedOrigin = true;
+    console.warn(`materials: first non-finite ${label}`, new Error('origin').stack);
+  }
   console.warn(`materials: non-finite ${label} (${value}), substituting ${fallback}`);
   return fallback;
 }
