@@ -197,9 +197,26 @@ export function linear(
   y1: number,
   stops: [number, string][]
 ): CanvasGradient {
-  const g = ctx.createLinearGradient(x0, y0, x1, y1);
-  for (const [o, c] of stops) g.addColorStop(o, c);
+  const g = ctx.createLinearGradient(
+    finite(x0, 0, 'linear x0'),
+    finite(y0, 0, 'linear y0'),
+    finite(x1, 1, 'linear x1'),
+    finite(y1, 0, 'linear y1')
+  );
+  for (const [o, c] of stops) g.addColorStop(Math.min(1, Math.max(0, o)), c);
   return g;
+}
+
+/**
+ * Canvas throws a hard TypeError on a non-finite gradient coordinate, which
+ * would take down the whole scene because one card produced a NaN somewhere
+ * upstream. A face texture is decoration; it is never worth an app crash. Sub a
+ * safe value, warn so the real cause stays findable, and carry on.
+ */
+function finite(value: number, fallback: number, label: string): number {
+  if (Number.isFinite(value)) return value;
+  console.warn(`materials: non-finite ${label} (${value}), substituting ${fallback}`);
+  return fallback;
 }
 
 export function radial(
@@ -210,7 +227,13 @@ export function radial(
   r1: number,
   stops: [number, string][]
 ): CanvasGradient {
-  const g = ctx.createRadialGradient(x, y, r0, x, y, r1);
-  for (const [o, c] of stops) g.addColorStop(o, c);
+  const sx = finite(x, 0, 'radial x');
+  const sy = finite(y, 0, 'radial y');
+  // Radii must additionally be non-negative, and r1 must exceed r0 or the
+  // gradient degenerates.
+  const s0 = Math.max(0, finite(r0, 0, 'radial r0'));
+  const s1 = Math.max(s0 + 1e-3, finite(r1, s0 + 1, 'radial r1'));
+  const g = ctx.createRadialGradient(sx, sy, s0, sx, sy, s1);
+  for (const [o, c] of stops) g.addColorStop(Math.min(1, Math.max(0, o)), c);
   return g;
 }

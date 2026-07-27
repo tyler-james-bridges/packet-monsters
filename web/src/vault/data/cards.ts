@@ -1,8 +1,14 @@
-import raw from '../../../data/cards.json';
+import { cards } from '@/lib/cards';
 import type { CardRecord, TypeName } from '../core/types';
 import { TYPE_NAMES } from '../core/types';
 
-export const CARDS: CardRecord[] = raw as CardRecord[];
+/**
+ * The vault reads the application's own card table rather than loading a second
+ * copy of the data. `CardDef` in @/lib/cards is field identical to `CardRecord`,
+ * so the shop, collection, battle and vault can never disagree about what a
+ * card is.
+ */
+export const CARDS: CardRecord[] = cards;
 
 export function typeNameOf(card: CardRecord): TypeName {
   return TYPE_NAMES[card.typeId] ?? 'EXOTIC';

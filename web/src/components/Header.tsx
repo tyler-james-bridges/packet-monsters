@@ -9,6 +9,7 @@ import { parseContractError } from "@/lib/errors";
 
 const NAV = [
   { href: "/", label: "shop" },
+  { href: "/vault", label: "vault" },
   { href: "/collection", label: "collection" },
   { href: "/battle", label: "battle" },
   { href: "/leaderboard", label: "leaderboard" },

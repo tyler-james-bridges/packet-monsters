@@ -123,6 +123,7 @@ const captured = [];
 for (const shot of targets) {
   await page.goto(`${base}?seed=${encodeURIComponent(SEED)}&shot=${encodeURIComponent(shot)}`, {
     waitUntil: 'load',
+    timeout: 180000,
   });
   await page.waitForFunction(() => window.__harness && window.__harness.ready === true, null, {
     timeout: 60000,

@@ -1,5 +1,6 @@
 import * as THREE from 'three';
-import type { AppContext, System, VaultPosition } from '../core/types';
+import type { AppContext, CardRecord, System, VaultPosition } from '../core/types';
+import { createCardGeometry, createCardMaterial, type CardMaterial } from '../materials';
 import { registerShot } from '../core/harness';
 import { choreoFor, STAGE, type AnimBeat, type Choreo } from '../anim/choreography';
 import { Timeline, Track, type Key } from '../anim/timeline';
@@ -66,13 +67,30 @@ export function createCardStage(ctx: AppContext): System {
   };
 
   // --- materials ------------------------------------------------------------
-  // The card-materials agent owns the card surface. Swapping their factory in is
-  // a one line change here: replace `makeCardMaterials()` with their
-  // `createCardMaterials(ctx, record)` and delete this local helper. Nothing else
-  // in this file reads the material.
-  const cardMaterials = makeCardMaterials(keep);
-  const faceMat = cardMaterials[4] as THREE.MeshPhysicalMaterial;
-  const backMat = cardMaterials[5] as THREE.MeshPhysicalMaterial;
+  // The real card surface: thin film foil, a printed face composed from the
+  // card's own record, and a rolled edge showing the laminate core. Materials
+  // are reference counted per card, so the stage takes one for whichever card is
+  // currently in play and releases it when another takes over.
+  let cardMat: CardMaterial | null = null;
+  let faceMat: THREE.MeshPhysicalMaterial | null = null;
+  let backMat: THREE.MeshPhysicalMaterial | null = null;
+
+  /**
+   * Point the card mesh at `record`'s surface. Composing a face is roughly 40 ms
+   * of canvas work, so this runs at the top of the charge beat while the packet
+   * is still sealed, never on the reveal frame itself.
+   */
+  function useCardMaterial(record: CardRecord): void {
+    if (cardMat && cardMat.card.id === record.id) return;
+    const previous = cardMat;
+    cardMat = createCardMaterial(record, ctx);
+    card.material = cardMat.materials;
+    faceMat = cardMat.front;
+    backMat = cardMat.back;
+    // Release after assigning, so a shared program is never dropped to zero
+    // references and recompiled between two cards of the same rarity and type.
+    previous?.release();
+  }
 
   const foilMat = keep(
     new THREE.MeshPhysicalMaterial({
@@ -170,8 +188,11 @@ export function createCardStage(ctx: AppContext): System {
   flex.add(core);
 
   // --- card -----------------------------------------------------------------
-  const cardGeo = keep(new THREE.BoxGeometry(CARD_W, CARD_H, CARD_T));
-  const card = new THREE.Mesh(cardGeo, cardMaterials);
+  // Swept profile rather than a box: the rolled corner and the cut edge showing
+  // the printed core are what stop it reading as a textured rectangle.
+  const cardGeo = keep(createCardGeometry({ height: CARD_H }));
+  // Materials arrive with the first card; the mesh is hidden until then.
+  const card = new THREE.Mesh(cardGeo, [] as THREE.Material[]);
   card.castShadow = true;
   card.receiveShadow = true;
   card.visible = false;
@@ -367,8 +388,8 @@ export function createCardStage(ctx: AppContext): System {
     seamMat.emissive.copy(color);
     edgeGlowMat.emissive.copy(color);
     coreMat.color.copy(color);
-    faceMat.emissive.copy(color);
-    backMat.emissive.copy(color);
+    faceMat?.emissive.copy(color);
+    backMat?.emissive.copy(color);
   }
 
   function beginSequence(position: VaultPosition, index: number): void {
@@ -377,6 +398,8 @@ export function createCardStage(ctx: AppContext): System {
     hero = position;
     currentIndex = index;
     seqSeed = seedFrom(position.card.id, index, rarity);
+    // Compose this card's surface now, during the sealed charge beat.
+    useCardMaterial(position.card);
     tint(choreo.color);
 
     landed = false;
@@ -814,8 +837,15 @@ export function createCardStage(ctx: AppContext): System {
       seamMat.emissiveIntensity = 0.5 + g * 2.4;
       edgeGlowMat.emissiveIntensity = 0.18 + g * 0.9;
       coreMat.opacity = clamp01(0.18 + g * 0.35);
-      faceMat.emissiveIntensity = 0.06 + clamp01(g) * 0.22;
-      backMat.emissiveIntensity = 0.03 + clamp01(g) * 0.12;
+      if (faceMat) faceMat.emissiveIntensity = 0.06 + clamp01(g) * 0.22;
+      if (backMat) backMat.emissiveIntensity = 0.03 + clamp01(g) * 0.12;
+
+      if (cardMat) {
+        // The foil charges through the turn and takes the impact punch, so the
+        // interference is at its widest exactly when the face meets the lens.
+        cardMat.setReveal(beat === 'turn' || beat === 'settle' ? clamp01(g) : 0);
+        cardMat.setSurge(clamp01(g * 0.8));
+      }
 
       // Publish the current subject so the camera can track it and the DOF pass
       // can focus on where the card actually is.
@@ -852,10 +882,15 @@ export function createCardStage(ctx: AppContext): System {
 
     update(t) {
       tick(t.dt);
+      // Drives the travelling interference term; must run every frame or the
+      // foil is a static rainbow rather than a moving one.
+      cardMat?.update(t);
     },
 
     dispose() {
       ctx.scene.remove(root);
+      cardMat?.release();
+      cardMat = null;
       for (const d of disposables) d.dispose();
     },
   };
@@ -876,48 +911,4 @@ export function createCardStage(ctx: AppContext): System {
       .addScaledVector(p2, t * t);
     return out;
   }
-}
-
-/**
- * Placeholder card surface, in BoxGeometry group order:
- * [+X, -X, +Y, -Y, +Z (face), -Z (back)].
- *
- * The face and back are deliberately different so the hero turn is legible even
- * before the real material lands. Swap this whole function for the card-materials
- * agent's factory; the stage only ever touches `emissive` and `emissiveIntensity`
- * on indices 4 and 5.
- */
-function makeCardMaterials(
-  keep: <T extends { dispose(): void }>(x: T) => T
-): THREE.MeshPhysicalMaterial[] {
-  const edge = keep(
-    new THREE.MeshPhysicalMaterial({
-      color: 0xc8d4e8,
-      roughness: 0.34,
-      metalness: 0.9,
-    })
-  );
-  const face = keep(
-    new THREE.MeshPhysicalMaterial({
-      color: 0x8fa4c8,
-      roughness: 0.16,
-      metalness: 0.82,
-      clearcoat: 1,
-      clearcoatRoughness: 0.05,
-      emissive: new THREE.Color(0x9fb6d8),
-      emissiveIntensity: 0.1,
-    })
-  );
-  const back = keep(
-    new THREE.MeshPhysicalMaterial({
-      color: 0x121a30,
-      roughness: 0.28,
-      metalness: 0.92,
-      clearcoat: 1,
-      clearcoatRoughness: 0.12,
-      emissive: new THREE.Color(0x9fb6d8),
-      emissiveIntensity: 0.05,
-    })
-  );
-  return [edge, edge, edge, edge, face, back];
 }
