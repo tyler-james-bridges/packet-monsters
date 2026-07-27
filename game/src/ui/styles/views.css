@@ -127,6 +127,19 @@
   vertical-align: middle;
 }
 
+/* Optical alignment: the table's first and last columns have to sit flush with
+   the panel's content edge, not inset by a cell gutter, or the whole table
+   floats a few pixels right of the heading above it. */
+.dtable th:first-child,
+.dtable td:first-child {
+  padding-left: 0;
+}
+
+.dtable th:last-child,
+.dtable td:last-child {
+  padding-right: 0;
+}
+
 /* Phone: pooled backing, frequency and the distribution bar are supporting
    detail. Tier, count and probability are the answer, and they get the width. */
 .dtable th:nth-child(3),

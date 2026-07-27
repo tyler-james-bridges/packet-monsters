@@ -203,7 +203,10 @@ void main() {
   // Exposure is resolved once, by the meter, and shared. The bloom chain has
   // already been scaled by the same value, so it is added after exposure, not
   // before, and the threshold it was built against still means what it says.
-  float exposure = texture( tMeter, vec2( 0.5 ) ).b * uExposureScale;
+  // Floored and ceilinged. If the metering target ever failed to resolve, an
+  // unguarded multiply by its blue channel would hand back a completely black
+  // frame with no other symptom, which is a miserable thing to debug.
+  float exposure = clamp( texture( tMeter, vec2( 0.5 ) ).b, 0.05, 64.0 ) * uExposureScale;
   color = max( color, vec3( 0.0 ) ) * exposure + max( bloom, vec3( 0.0 ) ) * uBloomStrength;
 
   // Optical falloff. One over one plus k r squared, squared, is a cheap stand

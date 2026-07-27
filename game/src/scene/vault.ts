@@ -77,9 +77,9 @@ export function createVault(ctx: AppContext): System {
       // mood is a trap: the auto exposure just opens up and the frame goes
       // noisy. Mood comes from the lighting, not from crushing the albedo.
       base: [0.118, 0.126, 0.142],
-      variation: 0.042,
-      roughnessRange: [0.54, 0.95],
-      normalStrength: 26,
+      variation: 0.026,
+      roughnessRange: [0.56, 0.93],
+      normalStrength: 12,
       anisotropy: aniso,
     })
   );
@@ -91,10 +91,10 @@ export function createVault(ctx: AppContext): System {
       // Ground and sealed slab: darker than the walls so the reflection reads
       // as reflection rather than as a bright floor.
       base: [0.050, 0.055, 0.066],
-      variation: 0.019,
+      variation: 0.013,
       // Ground and sealed: still concrete, but it holds a reflection.
-      roughnessRange: [0.10, 0.40],
-      normalStrength: 9,
+      roughnessRange: [0.10, 0.38],
+      normalStrength: 5,
       anisotropy: aniso,
     })
   );

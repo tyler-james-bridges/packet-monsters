@@ -164,7 +164,9 @@ export function createConcreteTextures(opts: ConcreteOptions): PbrTextureSet {
       aggregate[i] = agg;
       pores[i] = pore;
       stain[i] = fbm2(u, v, 2, 3, seed + 401);
-      height[i] = swell * 0.55 + tooth * 0.30 + agg * 0.16 - pore * 0.55 + dust * 0.06;
+      // Weighted toward the low frequencies. Cranking the fine terms is what
+      // turns a concrete map into television static once it is minified.
+      height[i] = swell * 0.62 + tooth * 0.19 + agg * 0.10 - pore * 0.34 + dust * 0.022;
     }
   }
 
@@ -178,7 +180,7 @@ export function createConcreteTextures(opts: ConcreteOptions): PbrTextureSet {
 
     // Stains lift and cool the albedo; aggregate lifts it slightly and greys it.
     const s = (stain[i] - 0.5) * 2;
-    const lift = s * variation + aggregate[i] * variation * 0.85 - pores[i] * variation * 1.6;
+    const lift = s * variation + aggregate[i] * variation * 0.45 - pores[i] * variation * 0.9;
     const r = base[0] + lift + s * 0.004;
     const g = base[1] + lift + s * 0.001;
     const b = base[2] + lift - s * 0.003;
@@ -190,9 +192,9 @@ export function createConcreteTextures(opts: ConcreteOptions): PbrTextureSet {
     albedo[o + 3] = 255;
 
     // Polished aggregate is smoother than the paste; voids are rougher still.
-    let rough = rr[0] + (rr[1] - rr[0]) * (0.55 + (stain[i] - 0.5) * 0.9);
-    rough -= aggregate[i] * 0.26;
-    rough += pores[i] * 0.14;
+    let rough = rr[0] + (rr[1] - rr[0]) * (0.55 + (stain[i] - 0.5) * 0.72);
+    rough -= aggregate[i] * 0.15;
+    rough += pores[i] * 0.09;
 
     orm[o] = Math.round(ao * 255);
     orm[o + 1] = Math.round(clamp01(rough) * 255);

@@ -32,7 +32,7 @@ uniform float uExposureScale;
 vec3 fetch( vec2 uv ) {
   // Exposure first. The threshold below is stated in exposed scene linear, so
   // it means the same thing whether the metered gain is one stop or five.
-  float exposure = texture( tMeter, vec2( 0.5 ) ).b * uExposureScale;
+  float exposure = clamp( texture( tMeter, vec2( 0.5 ) ).b, 0.05, 64.0 ) * uExposureScale;
   vec3 c = texture( tSource, uv ).rgb * exposure;
   // Hard clamp after exposure. Values above this are not light, they are a
   // sampling accident, and they would alias for the whole chain.
